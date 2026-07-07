@@ -8,8 +8,8 @@ class Config:
     max_retries: int = 1
     retry_delay: float = 2.0
     log_file: Path = Path("logs/downloader.log")
-    max_concurrent_downloads: int = 3
-    max_youtube_concurrent: int = 2
+    max_concurrent_downloads: int = 5
+    max_youtube_concurrent: int = 5
 
     def ensure_dirs(self):
         self.download_dir.mkdir(parents=True, exist_ok=True)
