@@ -10,9 +10,15 @@ class Config:
     log_file: Path = Path("logs/downloader.log")
     max_concurrent_downloads: int = 5
     max_youtube_concurrent: int = 5
+    torrent_port_start: int = 6881
+    torrent_port_end: int = 6889
+    torrent_dir: Path = Path.home() / "Downloads" / "EasyBay" / "torrents"
+    torrent_dht_timeout: int = 15
+    torrent_metadata_timeout: int = 10
 
     def ensure_dirs(self):
         self.download_dir.mkdir(parents=True, exist_ok=True)
+        self.torrent_dir.mkdir(parents=True, exist_ok=True)
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
 
 

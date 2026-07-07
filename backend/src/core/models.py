@@ -15,6 +15,7 @@ class VideoType(Enum):
 class DownloadStatus(Enum):
     PENDING = "pending"
     DOWNLOADING = "downloading"
+    PAUSED = "paused"
     COMPLETED = "completed"
     FAILED = "failed"
 

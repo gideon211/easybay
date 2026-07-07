@@ -1,12 +1,13 @@
 import time
+import threading
 import yt_dlp
 from pathlib import Path
 from typing import Callable, Optional
 from datetime import datetime
 
-from .models import VideoType, DownloadResult, ProgressInfo, DownloadStatus, Quality
+from .models import VideoType, DownloadResult, ProgressInfo, DownloadStatus
 from .detector import detect_video_type
-from .quality import get_format_string
+from .quality import resolve_format_string
 from .config import get_config
 
 
@@ -15,14 +16,22 @@ class DownloadError(Exception):
 
 
 class Downloader:
-    def __init__(self, progress_callback: Optional[Callable[[ProgressInfo], None]] = None):
+    def __init__(
+        self,
+        progress_callback: Optional[Callable[[ProgressInfo], None]] = None,
+        cancel_event: Optional[threading.Event] = None,
+    ):
         self.config = get_config()
         self.progress_callback = progress_callback
         self._current_info: Optional[ProgressInfo] = None
+        self._cancel_event = cancel_event
 
     def _progress_hook(self, d: dict):
         if self._current_info is None:
             return
+
+        if self._cancel_event and self._cancel_event.is_set():
+            raise yt_dlp.utils.DownloadError("Paused by user")
 
         if d['status'] == 'downloading':
             total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
@@ -38,7 +47,6 @@ class Downloader:
         elif d['status'] == 'finished':
             self._current_info.progress = 1.0
             self._current_info.status = DownloadStatus.COMPLETED
-            self._current_info.filename = d.get('filename', '')
 
         if self.progress_callback:
             self.progress_callback(self._current_info)
@@ -56,13 +64,13 @@ class Downloader:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         return f"{safe_title}_{timestamp}.{ext}"
 
-    def _download_with_retry(self, url: str, quality: Quality, output_dir: Path) -> DownloadResult:
+    def _download_with_retry(self, url: str, quality: str, output_dir: Path) -> DownloadResult:
         video_type = detect_video_type(url)
-        format_string = get_format_string(quality)
+        format_string = resolve_format_string(quality)
 
         ydl_opts = {
             'format': format_string,
-            'outtmpl': str(output_dir / '%(title)s.%(ext)s'),
+            'outtmpl': str(output_dir / '%(id)s.%(ext)s'),
             'progress_hooks': [self._progress_hook],
             'noplaylist': True,
             'quiet': True,
@@ -71,6 +79,12 @@ class Downloader:
 
         last_error = None
         for attempt in range(self.config.max_retries + 1):
+            if self._cancel_event and self._cancel_event.is_set():
+                return DownloadResult(
+                    success=False,
+                    error="Paused by user",
+                    video_type=video_type,
+                )
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=True)
@@ -78,8 +92,15 @@ class Downloader:
                     if info:
                         title = info.get('title', 'download')
                         ext = info.get('ext', 'mp4')
+
+                        temp_name = f"{info['id']}.{ext}"
+                        temp_path = output_dir / temp_name
+
                         filename = self._generate_filename(title, ext)
                         filepath = output_dir / filename
+
+                        if temp_path.exists() and temp_path != filepath:
+                            temp_path.rename(filepath)
 
                         return DownloadResult(
                             success=True,
@@ -103,13 +124,26 @@ class Downloader:
             video_type=video_type
         )
 
-    def download(self, url: str, quality: Quality = Quality.BEST, output_dir: Optional[Path] = None) -> DownloadResult:
+    def download(self, url: str, quality: str = "best", output_dir: Optional[Path] = None) -> DownloadResult:
         self.config.ensure_dirs()
         output = output_dir or self.config.download_dir
 
+        # Pre-extract title so filename is known during the entire download
+        display_name = url
+        try:
+            preview_opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
+            with yt_dlp.YoutubeDL(preview_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                if info:
+                    title = info.get("title", "download")
+                    ext = info.get("ext", "mp4")
+                    display_name = self._generate_filename(title, ext)
+        except Exception:
+            pass
+
         self._current_info = ProgressInfo(
             status=DownloadStatus.PENDING,
-            filename=url
+            filename=display_name,
         )
         if self.progress_callback:
             self.progress_callback(self._current_info)
