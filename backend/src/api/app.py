@@ -26,6 +26,7 @@ from ..core.models import DownloadStatus
 from ..core.detector import detect_video_type, is_valid_url
 from ..core.downloader import Downloader
 from ..core.config import get_config
+from ..core.quality import parse_quality
 from ..watermark.remover import WatermarkRemover
 from ..torrent.manager import get_manager as get_torrent_manager
 
@@ -279,6 +280,13 @@ def run_download(download_id: int, url: str, quality: str):
 def submit_download(request: DownloadRequest, db: Session = Depends(get_db)):
     if not is_valid_url(request.url):
         raise HTTPException(status_code=400, detail="Invalid URL format")
+
+    try:
+        parse_quality(request.quality)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid quality: {request.quality}"
+        ) from None
 
     video_type = detect_video_type(request.url)
     quality = request.quality

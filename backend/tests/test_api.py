@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from src.api.app import app
-from src.db.models import init_db
+from src.db.models import init_db, SessionLocal, Base
 
 client = TestClient(app)
 
@@ -9,6 +9,13 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def setup_db():
     init_db()
+    db = SessionLocal()
+    try:
+        for table in reversed(Base.metadata.sorted_tables):
+            db.execute(table.delete())
+        db.commit()
+    finally:
+        db.close()
     yield
 
 
