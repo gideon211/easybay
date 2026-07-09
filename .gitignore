@@ -28,7 +28,7 @@ logs/
 *.log
 
 # Downloads (user content)
-downloads/
+backend/downloads/
 
 # Database
 backend/downloads.db
