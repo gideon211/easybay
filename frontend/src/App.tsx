@@ -79,7 +79,7 @@ export default function App() {
     <div className="min-h-dvh flex flex-col">
       <Header />
 
-      <main className="flex-1 max-w-screen-xl w-full mx-auto px-4 py-12 space-y-10">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-12 space-y-10">
         <div className="max-w-2xl mx-auto space-y-3 text-center">
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight leading-none">
             EasyBay
