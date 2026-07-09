@@ -2,11 +2,11 @@ from .models import Quality
 
 
 QUALITY_FORMATS = {
-    Quality.BEST: "bestvideo+bestaudio/best",
-    Quality.WORST: "worstvideo+worstaudio/worst",
-    Quality.Q1080P: "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-    Quality.Q720P: "bestvideo[height<=720]+bestaudio/best[height<=720]",
-    Quality.Q480P: "bestvideo[height<=480]+bestaudio/best[height<=480]",
+    Quality.BEST: "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+    Quality.WORST: "worstvideo[ext=mp4]+worstaudio[ext=m4a]/worst[ext=mp4]/worst",
+    Quality.Q1080P: "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best",
+    Quality.Q720P: "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best",
+    Quality.Q480P: "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best",
     Quality.AUDIO: "bestaudio/best",
 }
 

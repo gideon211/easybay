@@ -70,11 +70,13 @@ class Downloader:
 
         ydl_opts = {
             'format': format_string,
+            'merge_output_format': 'mp4',
             'outtmpl': str(output_dir / '%(id)s.%(ext)s'),
             'progress_hooks': [self._progress_hook],
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
+
         }
 
         last_error = None

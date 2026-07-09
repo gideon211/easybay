@@ -6,10 +6,12 @@ from src.core.detector import detect_video_type
 
 class TestQuality:
     def test_best_format(self):
-        assert get_format_string(Quality.BEST) == "bestvideo+bestaudio/best"
+        expected = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+        assert get_format_string(Quality.BEST) == expected
 
     def test_720p_format(self):
-        assert get_format_string(Quality.Q720P) == "bestvideo[height<=720]+bestaudio/best[height<=720]"
+        expected = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
+        assert get_format_string(Quality.Q720P) == expected
 
     def test_audio_format(self):
         assert get_format_string(Quality.AUDIO) == "bestaudio/best"
