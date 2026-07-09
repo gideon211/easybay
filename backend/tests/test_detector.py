@@ -1,4 +1,3 @@
-import pytest
 from src.core.detector import detect_video_type, is_valid_url
 from src.core.models import VideoType
 

@@ -1,11 +1,12 @@
 import asyncio
 import hashlib
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 from ..core.config import get_config
-from .magnet import resolve_magnet, parse_magnet
+from .magnet import parse_magnet, resolve_magnet
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ class TorrentManager:
         self.config = get_config()
         self._active: dict[str, dict[str, Any]] = {}
         self._callbacks: dict[str, list[Callable]] = {}
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._running = False
 
     def start(self):
@@ -52,9 +53,9 @@ class TorrentManager:
         source: str,
         info_hash: str = "",
         name: str = "",
-        notify: Optional[Callable[[dict[str, Any]], None]] = None,
+        notify: Callable[[dict[str, Any]], None] | None = None,
     ) -> str:
-        from aiotorrent import Torrent, DownloadStrategy
+        from aiotorrent import DownloadStrategy, Torrent
 
         if self.is_magnet(source):
             try:
@@ -87,7 +88,7 @@ class TorrentManager:
 
         async def _run():
             try:
-                torrent_path: Optional[Path] = None
+                torrent_path: Path | None = None
                 if self.is_magnet(source):
                     state["status"] = "resolving"
                     self._emit(info_hash)
@@ -109,7 +110,7 @@ class TorrentManager:
                     save_dir = self.config.torrent_dir / (torrent.torrent_info.get("name", "download"))
                     save_dir.mkdir(parents=True, exist_ok=True)
 
-                    for idx, file_obj in enumerate(torrent.files or []):
+                    for _idx, file_obj in enumerate(torrent.files or []):
                         if state["cancelled"]:
                             state["status"] = "cancelled"
                             self._emit(info_hash)
@@ -150,7 +151,7 @@ class TorrentManager:
         self._active[info_hash]["_task"] = task
         return info_hash
 
-    def get_status(self, info_hash: str) -> Optional[dict[str, Any]]:
+    def get_status(self, info_hash: str) -> dict[str, Any] | None:
         entry = self._active.get(info_hash)
         if entry:
             return {k: v for k, v in entry.items() if not k.startswith("_")}
@@ -190,7 +191,7 @@ class TorrentManager:
                 logger.error(f"Torrent callback error: {e}")
 
 
-_manager: Optional[TorrentManager] = None
+_manager: TorrentManager | None = None
 
 
 def get_manager() -> TorrentManager:

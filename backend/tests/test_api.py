@@ -1,7 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
+
 from src.api.app import app
-from src.db.models import init_db, SessionLocal, Base
+from src.db.models import Base, SessionLocal, init_db
 
 client = TestClient(app)
 

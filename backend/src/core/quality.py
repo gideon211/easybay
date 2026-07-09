@@ -1,6 +1,5 @@
 from .models import Quality
 
-
 QUALITY_FORMATS = {
     Quality.BEST: "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
     Quality.WORST: "worstvideo[ext=mp4]+worstaudio[ext=m4a]/worst[ext=mp4]/worst",

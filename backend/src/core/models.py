@@ -1,7 +1,5 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
-from datetime import datetime
 
 
 class VideoType(Enum):
@@ -32,9 +30,9 @@ class Quality(Enum):
 @dataclass
 class DownloadResult:
     success: bool
-    filename: Optional[str] = None
-    filepath: Optional[str] = None
-    error: Optional[str] = None
+    filename: str | None = None
+    filepath: str | None = None
+    error: str | None = None
     video_type: VideoType = VideoType.UNKNOWN
 
 

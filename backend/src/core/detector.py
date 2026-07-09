@@ -1,6 +1,6 @@
 import re
-from .models import VideoType
 
+from .models import VideoType
 
 YOUTUBE_PATTERNS = [
     r'(?:https?://)?(?:www\.|m\.)?youtube\.com/watch\?v=([\w-]+)',

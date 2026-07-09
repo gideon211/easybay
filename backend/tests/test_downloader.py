@@ -1,7 +1,7 @@
 import pytest
-from src.core.models import Quality, VideoType, DownloadStatus, ProgressInfo
+
+from src.core.models import DownloadStatus, ProgressInfo, Quality
 from src.core.quality import get_format_string, parse_quality
-from src.core.detector import detect_video_type
 
 
 class TestQuality:

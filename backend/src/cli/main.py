@@ -1,14 +1,13 @@
-import sys
 from pathlib import Path
-from typing import Optional
+
+import typer
 from rich.console import Console
 from rich.table import Table
-import typer
 
-from ..core.models import Quality, VideoType
+from ..core.config import get_config
 from ..core.detector import detect_video_type, is_valid_url
 from ..core.downloader import Downloader
-from ..core.config import get_config
+from ..core.models import Quality
 from .progress import ProgressDisplay
 
 app = typer.Typer(
@@ -27,7 +26,7 @@ def version_callback(value: bool):
 
 @app.callback()
 def main(
-    version: Optional[bool] = typer.Option(None, "--version", "-v", callback=version_callback, help="Show version"),
+    version: bool | None = typer.Option(None, "--version", "-v", callback=version_callback, help="Show version"),
 ):
     pass
 
@@ -36,7 +35,7 @@ def main(
 def download(
     url: str = typer.Argument(..., help="URL to download"),
     quality: str = typer.Option("best", "--quality", "-q", help="Video quality: best, worst, 1080p, 720p, 480p, audio"),
-    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output directory"),
+    output: str | None = typer.Option(None, "--output", "-o", help="Output directory"),
 ):
     if not is_valid_url(url):
         console.print("[red]Error: Invalid URL format[/red]")
@@ -50,7 +49,7 @@ def download(
     except ValueError:
         console.print(f"[red]Error: Invalid quality '{quality}'[/red]")
         console.print(f"[yellow]Valid options: {', '.join(q.value for q in Quality)}[/yellow]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     output_dir = Path(output) if output else get_config().download_dir
     progress = ProgressDisplay()
@@ -60,19 +59,17 @@ def download(
             if progress.task_id is None:
                 progress.start(info.filename or url)
             progress.update(info)
-        elif info.status.value == "completed":
-            progress.update(info)
-        elif info.status.value == "failed":
+        elif info.status.value == "completed" or info.status.value == "failed":
             progress.update(info)
 
     downloader = Downloader(progress_callback=on_progress)
 
     try:
         with progress.progress:
-            result = downloader.download(url, q, output_dir)
+            result = downloader.download(url, q.value, output_dir)
 
         if result.success:
-            console.print(f"\n[green]Download complete![/green]")
+            console.print("\n[green]Download complete![/green]")
             console.print(f"File: {result.filepath}")
         else:
             console.print(f"\n[red]Download failed: {result.error}[/red]")
@@ -80,10 +77,10 @@ def download(
 
     except KeyboardInterrupt:
         console.print("\n[yellow]Download cancelled[/yellow]")
-        raise typer.Exit(130)
+        raise typer.Exit(130) from None
     except Exception as e:
         console.print(f"\n[red]Unexpected error: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -123,12 +120,12 @@ def formats(
                         f.get('ext', 'N/A'),
                         f.get('resolution', 'N/A'),
                         str(f.get('fps', 'N/A')),
-                        f.get('filesize', 'N/A') and f"{f['filesize'] / 1024 / 1024:.1f}MB" if f.get('filesize') else 'N/A'
+                        f"{f['filesize'] / 1024 / 1024:.1f}MB" if f.get('filesize') else 'N/A'
                     )
                 console.print(table)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 if __name__ == "__main__":

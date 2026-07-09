@@ -1,7 +1,5 @@
-import subprocess
-import shutil
+import subprocess  # nosec
 from pathlib import Path
-from typing import Optional
 
 WATERMARK_PRESETS = {
     "tiktok": {
@@ -28,7 +26,7 @@ class WatermarkRemover:
         input_path: Path,
         video_type: str,
         output_suffix: str = ".clean",
-    ) -> Optional[Path]:
+    ) -> Path | None:
         if not self.has_watermark(video_type):
             return None
 
@@ -47,14 +45,14 @@ class WatermarkRemover:
         ]
 
         try:
-            subprocess.run(
+            subprocess.run(  # nosec
                 cmd,
                 capture_output=True,
                 text=True,
                 check=True,
                 timeout=300,
             )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             if temp_path.exists():
                 temp_path.unlink()
             return None

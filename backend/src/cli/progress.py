@@ -1,9 +1,14 @@
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
-from rich.live import Live
 from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 
-from ..core.models import ProgressInfo, DownloadStatus
+from ..core.models import DownloadStatus, ProgressInfo
 
 
 class ProgressDisplay:

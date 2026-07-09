@@ -1,11 +1,23 @@
 import logging
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, text
-from sqlalchemy.orm import declarative_base, sessionmaker
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    Integer,
+    String,
+    create_engine,
+    text,
+)
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 logger = logging.getLogger(__name__)
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
 
 
 class Download(Base):
@@ -96,7 +108,7 @@ def init_db():
             conn.execute(text("ALTER TABLE downloads ADD COLUMN remove_watermark BOOLEAN DEFAULT 0"))
             conn.commit()
     except Exception:
-        pass
+        logger.debug("Migration ALTER TABLE remove_watermark skipped (likely already exists)")
 
 
 def get_db():

@@ -1,14 +1,15 @@
-import time
 import threading
-import yt_dlp
-from pathlib import Path
-from typing import Callable, Optional
+import time
+from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 
-from .models import VideoType, DownloadResult, ProgressInfo, DownloadStatus
-from .detector import detect_video_type
-from .quality import resolve_format_string
+import yt_dlp
+
 from .config import get_config
+from .detector import detect_video_type
+from .models import DownloadResult, DownloadStatus, ProgressInfo
+from .quality import resolve_format_string
 
 
 class DownloadError(Exception):
@@ -18,12 +19,12 @@ class DownloadError(Exception):
 class Downloader:
     def __init__(
         self,
-        progress_callback: Optional[Callable[[ProgressInfo], None]] = None,
-        cancel_event: Optional[threading.Event] = None,
+        progress_callback: Callable[[ProgressInfo], None] | None = None,
+        cancel_event: threading.Event | None = None,
     ):
         self.config = get_config()
         self.progress_callback = progress_callback
-        self._current_info: Optional[ProgressInfo] = None
+        self._current_info: ProgressInfo | None = None
         self._cancel_event = cancel_event
 
     def _progress_hook(self, d: dict):
@@ -126,7 +127,7 @@ class Downloader:
             video_type=video_type
         )
 
-    def download(self, url: str, quality: str = "best", output_dir: Optional[Path] = None) -> DownloadResult:
+    def download(self, url: str, quality: str = "best", output_dir: Path | None = None) -> DownloadResult:
         self.config.ensure_dirs()
         output = output_dir or self.config.download_dir
 
@@ -141,7 +142,7 @@ class Downloader:
                     ext = info.get("ext", "mp4")
                     display_name = self._generate_filename(title, ext)
         except Exception:
-            pass
+            logger.debug("Failed to extract info for progress display")
 
         self._current_info = ProgressInfo(
             status=DownloadStatus.PENDING,

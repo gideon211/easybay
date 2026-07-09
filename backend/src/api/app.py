@@ -1,34 +1,32 @@
 import asyncio
 import hashlib
+import json
 import logging
 import re
-import json
 import threading
-import urllib.request
 import urllib.parse
-import yt_dlp
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Optional
 from pathlib import Path
 
-
-logger = logging.getLogger(__name__)
-from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
+import yt_dlp
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from concurrent.futures import ThreadPoolExecutor
 
-from ..db.models import Download, Torrent, init_db, get_db, SessionLocal
-from ..core.models import DownloadStatus
+from ..core.config import get_config
 from ..core.detector import detect_video_type, is_valid_url
 from ..core.downloader import Downloader
-from ..core.config import get_config
 from ..core.quality import parse_quality
-from ..watermark.remover import WatermarkRemover
+from ..db.models import Download, SessionLocal, Torrent, get_db, init_db
 from ..torrent.manager import get_manager as get_torrent_manager
+from ..watermark.remover import WatermarkRemover
+
+logger = logging.getLogger(__name__)
 
 config = get_config()
 executor = ThreadPoolExecutor(max_workers=config.max_concurrent_downloads)
@@ -71,15 +69,15 @@ class DownloadResponse(BaseModel):
     url: str
     video_type: str
     quality: str
-    filename: Optional[str]
+    filename: str | None
     status: str
     progress: float
-    speed: Optional[str]
-    eta: Optional[str]
-    error_message: Optional[str]
+    speed: str | None
+    eta: str | None
+    error_message: str | None
     remove_watermark: bool = False
-    created_at: Optional[str]
-    completed_at: Optional[str]
+    created_at: str | None
+    completed_at: str | None
 
 
 def _format_label(fmt: dict) -> str:
@@ -101,13 +99,13 @@ def _format_label(fmt: dict) -> str:
     elif has_video and height >= 1440:
         label = f"1440p ({height}p)"
     elif has_video and height >= 1080:
-        label = f"1080p"
+        label = "1080p"
     elif has_video and height >= 720:
-        label = f"720p"
+        label = "720p"
     elif has_video and height >= 480:
-        label = f"480p"
+        label = "480p"
     elif has_video and height >= 360:
-        label = f"360p"
+        label = "360p"
     elif has_video:
         label = f"{height}p"
     elif has_audio and not has_video:
@@ -174,7 +172,7 @@ def list_formats(request: FormatRequest):
         return result
 
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 NETWORK_ERROR_PATTERNS = (
@@ -442,12 +440,12 @@ def get_download_thumbnail(download_id: int, db: Session = Depends(get_db)):
             oembed_url = (
                 f"https://api.instagram.com/oembed?url={urllib.parse.quote(download.url)}&format=json"
             )
-            with urllib.request.urlopen(oembed_url, timeout=5) as resp:
+            with urllib.request.urlopen(oembed_url, timeout=5) as resp:  # nosec
                 data = json.loads(resp.read())
                 if data.get("thumbnail_url"):
                     return {"thumbnail_url": data["thumbnail_url"]}
         except Exception:
-            pass
+            return None
 
     raise HTTPException(status_code=404, detail="No thumbnail available")
 
@@ -461,20 +459,20 @@ class TorrentAddRequest(BaseModel):
 class TorrentResponse(BaseModel):
     id: int
     magnet: str
-    name: Optional[str]
-    info_hash: Optional[str]
-    save_path: Optional[str]
-    filename: Optional[str]
+    name: str | None
+    info_hash: str | None
+    save_path: str | None
+    filename: str | None
     status: str
     progress: float
-    speed: Optional[str]
-    eta: Optional[str]
+    speed: str | None
+    eta: str | None
     peers: int
-    total_size: Optional[int]
-    downloaded: Optional[int]
-    error_message: Optional[str]
-    created_at: Optional[str]
-    completed_at: Optional[str]
+    total_size: int | None
+    downloaded: int | None
+    error_message: str | None
+    created_at: str | None
+    completed_at: str | None
 
 
 @app.post("/api/torrents", response_model=TorrentResponse)
@@ -490,7 +488,7 @@ async def add_torrent(request: TorrentAddRequest, db: Session = Depends(get_db))
             if not request.name:
                 request.name = name
         except Exception:
-            info_hash = hashlib.sha256(request.source.encode()).hexdigest()[:20] if not info_hash else info_hash
+            info_hash = info_hash if info_hash else hashlib.sha256(request.source.encode()).hexdigest()[:20]
     elif not info_hash:
         info_hash = hashlib.sha256(request.source.encode()).hexdigest()[:20]
 
