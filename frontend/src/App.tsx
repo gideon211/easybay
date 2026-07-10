@@ -54,6 +54,7 @@ export default function App() {
     pauseDownload,
     resumeDownload,
     retryDownload,
+    downloadAgain,
     clearFailedDownloads,
   } = useDownloads();
   const {
@@ -129,6 +130,7 @@ export default function App() {
                 onPauseDownload={pauseDownload}
                 onResumeDownload={resumeDownload}
                 onRetryDownload={retryDownload}
+                onRedownload={downloadAgain}
                 isSubmitting={isSubmitting}
                 onNavigate={(p) => handleNavigate(p as Page)}
               />

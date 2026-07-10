@@ -7,6 +7,7 @@ import {
   resumeDownload,
   retryDownload,
   clearFailedDownloads,
+  reDownload,
   getDownloadStreamUrl,
   type Download,
   type DownloadRequest,
@@ -201,6 +202,19 @@ export function useDownloads() {
     };
   }, []);
 
+  const downloadAgain = useCallback(
+    async (id: number) => {
+      try {
+        const download = await reDownload(id);
+        setDownloads((prev) => [download, ...prev]);
+        connectToProgress(id);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to re-download");
+      }
+    },
+    [connectToProgress]
+  );
+
   return {
     downloads,
     loading,
@@ -210,6 +224,7 @@ export function useDownloads() {
     pauseDownload: pause,
     resumeDownload: resume,
     retryDownload: retry,
+    downloadAgain,
     clearFailedDownloads: clearFailed,
     refresh: fetchDownloads,
   };

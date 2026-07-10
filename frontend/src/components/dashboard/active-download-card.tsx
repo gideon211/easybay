@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import {
   Download as DownloadIcon,
   Trash2, RefreshCw,
@@ -27,6 +27,7 @@ interface ActiveDownloadCardProps {
   onPause?: (id: number) => void;
   onResume?: (id: number) => void;
   onRetry?: (id: number) => void;
+  onRedownload?: (id: number) => void;
 }
 
 function getStatusConfig(status: Download["status"]) {
@@ -59,7 +60,7 @@ function PlatformIcon({ videoType }: { videoType: string }) {
   }
 }
 
-export function ActiveDownloadCard({ download, onDelete, onPause, onResume, onRetry }: ActiveDownloadCardProps) {
+export function ActiveDownloadCard({ download, onDelete, onPause, onResume, onRetry, onRedownload }: ActiveDownloadCardProps) {
   const [imgError, setImgError] = useState(false);
   const [backendThumbnail, setBackendThumbnail] = useState<string | null>(null);
   const statusConfig = getStatusConfig(download.status);
@@ -154,13 +155,29 @@ export function ActiveDownloadCard({ download, onDelete, onPause, onResume, onRe
         {/* Actions */}
         <div className="flex items-center gap-1 pt-1">
           {download.status === "completed" && download.filename && (
-            <a
-              href={getDownloadStreamUrl(download.id)}
-              className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1.5")}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                const url = getDownloadStreamUrl(download.id);
+                const res = await fetch(url, { method: "HEAD" });
+                if (res.ok) {
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = "";
+                  a.click();
+                } else if (res.status === 404) {
+                  toast.error("File expired on server — re-download it");
+                  onRedownload?.(download.id);
+                } else {
+                  toast.error("Failed to download file");
+                }
+              }}
+              className="gap-1.5"
             >
               <DownloadIcon className="size-3" />
               Save to device
-            </a>
+            </Button>
           )}
 
           {download.status === "failed" && onRetry && (
