@@ -18,7 +18,8 @@ export function createProgressSocket(
   onMessage: MessageHandler,
   onError?: (error: Event) => void
 ): () => void {
-  const wsUrl = `ws://${window.location.host}/ws/${downloadId}`;
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${protocol}//${window.location.host}/ws/${downloadId}`;
   let socket: WebSocket | null = null;
   let reconnectTimeout: ReturnType<typeof setTimeout>;
   let reconnectAttempts = 0;

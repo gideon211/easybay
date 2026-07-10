@@ -9,7 +9,8 @@ export interface BgProgressState {
   error?: string;
 }
 
-const WS_BASE = `ws://${import.meta.env.VITE_WS_URL || window.location.host}/ws/remove-bg`;
+const WS_PROTO = window.location.protocol === "https:" ? "wss:" : "ws:";
+const WS_BASE = `${WS_PROTO}//${import.meta.env.VITE_WS_URL || window.location.host}/ws/remove-bg`;
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
 export function useRemoveBg() {
