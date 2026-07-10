@@ -87,8 +87,10 @@ class Downloader:
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
-
         }
+
+        if self.config.download_speed_limit > 0:
+            ydl_opts['ratelimit'] = self.config.download_speed_limit * 1024  # KB/s to B/s
 
         last_error = None
         for attempt in range(self.config.max_retries + 1):

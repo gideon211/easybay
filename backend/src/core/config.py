@@ -14,6 +14,7 @@ class Config:
         self.log_file: Path = Path("logs/downloader.log")
         self.max_concurrent_downloads: int = 5
         self.max_youtube_concurrent: int = 5
+        self.download_speed_limit: int = 0  # 0 = unlimited
         self.torrent_port_start: int = 6881
         self.torrent_port_end: int = 6889
         self.torrent_dir: Path = Path.home() / "Downloads" / "EasyBay" / "torrents"
@@ -55,6 +56,8 @@ class Config:
             self.max_concurrent_downloads = int(value)
         elif key == "max_youtube_concurrent":
             self.max_youtube_concurrent = int(value)
+        elif key == "download_speed_limit":
+            self.download_speed_limit = int(value)
         elif key == "torrent_port_start":
             self.torrent_port_start = int(value)
         elif key == "torrent_port_end":
@@ -103,6 +106,7 @@ class Config:
             "torrent_dir": str(self.torrent_dir),
             "torrent_dht_timeout": str(self.torrent_dht_timeout),
             "torrent_metadata_timeout": str(self.torrent_metadata_timeout),
+            "download_speed_limit": str(self.download_speed_limit),
             "uploads_dir": str(self.uploads_dir),
             "bg_results_dir": str(self.bg_results_dir),
         }

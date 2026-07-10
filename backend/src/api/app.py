@@ -984,6 +984,108 @@ async def convert_passport(
     })
 
 
+@app.post("/api/passport/batch")
+async def convert_passport_batch(
+    files: list[UploadFile] = File(...),
+    country_code: str = "US",
+    bg_color: str = "#ffffff",
+):
+    import io
+    import zipfile
+
+    for f in files:
+        if f.content_type not in ALLOWED_IMAGE_TYPES:
+            raise HTTPException(status_code=400, detail=f"Unsupported image type: {f.content_type}")
+
+    converter = PassportConverter()
+    loop = asyncio.get_running_loop()
+    zip_buf = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file in files:
+            input_bytes = await file.read()
+            stem = Path(file.filename or "photo").stem
+            try:
+                result_bytes = await loop.run_in_executor(
+                    None,
+                    converter.convert,
+                    input_bytes,
+                    country_code,
+                    bg_color,
+                    None,
+                )
+                zf.writestr(f"{stem}_passport.png", result_bytes)
+            except NoFaceDetectedError:
+                zf.writestr(f"{stem}_ERROR.txt", f"No face detected in {file.filename}")
+            except Exception as e:
+                zf.writestr(f"{stem}_ERROR.txt", f"Conversion failed: {e}")
+
+    zip_buf.seek(0)
+    return Response(content=zip_buf.getvalue(), media_type="application/zip", headers={
+        "Content-Disposition": 'attachment; filename="passport_photos.zip"',
+    })
+
+
+ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg"}
+
+
+@app.get("/api/files")
+def list_files():
+    d = config.download_dir
+    if not d.exists():
+        return []
+    entries: list[dict] = []
+    for p in sorted(d.iterdir(), key=lambda x: x.name.lower()):
+        if p.name.startswith("."):
+            continue
+        is_dir = p.is_dir()
+        if is_dir:
+            continue
+        stat = p.stat()
+        entries.append({
+            "name": p.name,
+            "path": str(p),
+            "size": stat.st_size,
+            "is_dir": is_dir,
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "extension": p.suffix.lower(),
+        })
+    return entries
+
+
+@app.get("/api/files/preview/{filename:path}")
+def file_preview(filename: str):
+    filepath = config.download_dir / filename
+    if not filepath.exists() or not filepath.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    ext = filepath.suffix.lower()
+    if ext in ALLOWED_IMAGE_EXTS:
+        return FileResponse(path=str(filepath), media_type=f"image/{ext[1:]}")
+    raise HTTPException(status_code=400, detail="No preview available")
+
+
+@app.get("/api/files/download/{filename:path}")
+def file_download(filename: str):
+    filepath = config.download_dir / filename
+    if not filepath.exists() or not filepath.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(
+        path=str(filepath),
+        filename=filepath.name,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filepath.name}"'},
+    )
+
+
+@app.delete("/api/files/{filename:path}")
+def delete_file(filename: str):
+    filepath = config.download_dir / filename
+    if not filepath.exists() or not filepath.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    filepath.unlink()
+    return {"message": "File deleted"}
+
+
 @app.get("/api/health")
 def health_check():
     return {"status": "ok", "version": "0.1.0"}

@@ -1,8 +1,7 @@
 import { useEffect, useCallback } from "react";
-import { X, Download as DownloadIcon, ExternalLink, Film, Music } from "lucide-react";
-import { buttonVariants } from "@/components/ui/button";
+import { X, Film, Music } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { cn, formatQuality, isVideoFile, isAudioFile } from "@/lib/utils";
+import { formatQuality, isVideoFile, isAudioFile } from "@/lib/utils";
 import { getDownloadFileUrl } from "@/lib/api";
 import type { Download } from "@/lib/api";
 
@@ -121,28 +120,6 @@ export function MediaPreview({ download, onClose }: MediaPreviewProps) {
           )}
         </div>
 
-        {/* Footer actions */}
-        {download.status === "completed" && download.filename && (
-          <div className="flex items-center justify-end gap-2 px-5 pb-4 pt-2 border-t border-hairline">
-            <a
-              href={fileUrl}
-              target="_blank"
-              rel="noreferrer"
-              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-            >
-              <ExternalLink className="size-3" />
-              Open in new tab
-            </a>
-            <a
-              href={fileUrl}
-              download={download.filename}
-              className={cn(buttonVariants({ variant: "default", size: "sm" }))}
-            >
-              <DownloadIcon className="size-3" />
-              Download file
-            </a>
-          </div>
-        )}
       </div>
     </div>
   );

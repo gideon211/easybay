@@ -1,8 +1,9 @@
 import { useState, useMemo } from "react";
+import { toast } from "sonner";
 import {
   Loader2, ExternalLink, Trash2, Magnet, FileUp,
   CheckCircle2, XCircle, Clock, ArrowUpDown,
-  Users
+  Users, Copy
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn, formatBytes } from "@/lib/utils";
@@ -292,6 +293,16 @@ export function TorrentList({ torrents, loading, onDelete }: TorrentListProps) {
                         {/* Actions */}
                         <td className="px-3 py-2.5 text-right">
                           <div className="flex items-center justify-end gap-0.5">
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(t.magnet);
+                                toast.success("Magnet copied");
+                              }}
+                              className="inline-flex items-center justify-center size-7 rounded-sm hover:bg-surface-soft transition-colors text-mute hover:text-ink"
+                              title="Copy magnet"
+                            >
+                              <Copy className="size-3.5" />
+                            </button>
                             {t.status === "completed" && (
                               <a
                                 href={fileUrl}
@@ -382,6 +393,16 @@ export function TorrentList({ torrents, loading, onDelete }: TorrentListProps) {
 
                   {/* Actions */}
                   <div className="flex items-center gap-1 pt-0.5">
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(t.magnet);
+                        toast.success("Magnet copied");
+                      }}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-ink hover:text-ink-deep transition-colors px-2 py-1 rounded-sm hover:bg-surface-soft"
+                    >
+                      <Copy className="size-3" />
+                      Copy
+                    </button>
                     {t.status === "completed" && (
                       <a
                         href={fileUrl}

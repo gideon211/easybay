@@ -240,6 +240,29 @@ export function SettingsPage() {
             </span>
           </div>
         </SettingRow>
+        <SettingRow label="Download speed limit" description="Per-download speed cap (0 = unlimited)">
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min={0}
+              max={100000}
+              step={100}
+              defaultValue={settings?.download_speed_limit ?? "0"}
+              onChange={(e) => handleSave("download_speed_limit", e.target.value)}
+              className={sliderClass}
+            />
+            <span className="text-xs tabular-nums text-mute w-16 text-right">
+              {(() => {
+                const v = Number(settings?.download_speed_limit ?? 0);
+                return v > 0
+                  ? v >= 1000
+                    ? `${(v / 1000).toFixed(1)}MB/s`
+                    : `${v}KB/s`
+                  : "Unlimited";
+              })()}
+            </span>
+          </div>
+        </SettingRow>
       </Section>
 
       {/* Torrents */}

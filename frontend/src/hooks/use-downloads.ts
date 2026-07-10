@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getDownloads,
   submitDownload,
@@ -9,6 +9,7 @@ import {
   type DownloadRequest,
 } from "@/lib/api";
 import { createProgressSocket, type ProgressMessage } from "@/lib/ws";
+import { notifyComplete, requestNotificationPermission } from "@/lib/notify";
 
 /**
  * Manages download state, WebSocket connections, and API interactions.
@@ -17,14 +18,28 @@ export function useDownloads() {
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const notifiedIds = useRef(new Set<number>());
 
   // Active WebSocket connections keyed by download ID
   const activeConnections = new Map<number, () => void>();
 
+  requestNotificationPermission();
+
   const fetchDownloads = useCallback(async () => {
     try {
       const data = await getDownloads();
-      setDownloads(data);
+      setDownloads((prev) => {
+        for (const d of data) {
+          if (d.status === "completed" && !notifiedIds.current.has(d.id)) {
+            const old = prev.find((p) => p.id === d.id);
+            if (old && old.status !== "completed") {
+              notifiedIds.current.add(d.id);
+              notifyComplete("Download complete", d.filename ?? undefined);
+            }
+          }
+        }
+        return data;
+      });
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch downloads");
@@ -67,8 +82,10 @@ export function useDownloads() {
       const cleanup = createProgressSocket(
         downloadId,
         (data: ProgressMessage) => {
-          setDownloads((prev) =>
-            prev.map((d) =>
+          setDownloads((prev) => {
+            const old = prev.find((d) => d.id === downloadId);
+            const wasCompleted = old?.status === "completed";
+            const next = prev.map((d) =>
               d.id === downloadId
                 ? {
                     ...d,
@@ -79,8 +96,13 @@ export function useDownloads() {
                     filename: data.filename ?? d.filename,
                   }
                 : d
-            )
-          );
+            );
+            if (data.status === "completed" && !wasCompleted && !notifiedIds.current.has(downloadId)) {
+              notifiedIds.current.add(downloadId);
+              notifyComplete("Download complete", data.filename ?? undefined);
+            }
+            return next;
+          });
 
           // Clean up connection when download completes or fails
           if (data.status === "completed" || data.status === "failed") {

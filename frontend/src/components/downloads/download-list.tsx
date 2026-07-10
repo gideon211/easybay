@@ -1,9 +1,10 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { toast } from "sonner";
 import {
   Inbox, Loader2, ExternalLink, Trash2,
   Pause, Play, Youtube, Music, Camera,
   MessageCircle, Globe, CheckCircle2, XCircle,
-  Clock, ArrowUpDown
+  Clock, ArrowUpDown, Copy
 } from "lucide-react";
 import { MediaPreview } from "./media-preview";
 import { Progress } from "@/components/ui/progress";
@@ -24,9 +25,41 @@ interface DownloadListProps {
   onResume?: (id: number) => void;
 }
 
-function PlatformIcon({ videoType, className }: { videoType: string; className?: string }) {
+const thumbnailCache = new Map<number, string | null>();
+
+function DownloadThumbnail({ download, className }: { download: Download; className?: string }) {
+  const [thumb, setThumb] = useState<string | null | undefined>(thumbnailCache.get(download.id));
+
+  useEffect(() => {
+    if (thumb !== undefined) return;
+    fetch(`/api/downloads/${download.id}/thumbnail`)
+      .then((r) => r.ok ? r.json() : Promise.reject())
+      .then((data) => {
+        const url = data.thumbnail_url ?? null;
+        thumbnailCache.set(download.id, url);
+        setThumb(url);
+      })
+      .catch(() => {
+        thumbnailCache.set(download.id, null);
+        setThumb(null);
+      });
+  }, [download.id, thumb]);
+
   const cls = cn("size-4 shrink-0", className);
-  switch (videoType) {
+
+  if (thumb) {
+    return (
+      <img
+        src={thumb}
+        alt=""
+        className={cn("size-8 rounded-sm object-cover border border-hairline", className)}
+        loading="lazy"
+      />
+    );
+  }
+
+  // Fallback to platform icon
+  switch (download.video_type) {
     case "youtube":
       return <Youtube className={cn(cls, "text-red-500")} />;
     case "tiktok":
@@ -232,9 +265,9 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume }
                         "transition-colors",
                         d.status === "failed" ? "bg-destructive/[0.02]" : "hover:bg-surface-soft"
                       )}>
-                        {/* Platform icon */}
+                        {/* Platform icon / thumbnail */}
                         <td className="px-3 py-2.5">
-                          <PlatformIcon videoType={d.video_type} />
+                          <DownloadThumbnail download={d} />
                         </td>
 
                         {/* Filename */}
@@ -304,6 +337,16 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume }
                         {/* Actions */}
                         <td className="px-3 py-2.5 text-right">
                           <div className="flex items-center justify-end gap-0.5">
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(d.url);
+                                toast.success("URL copied");
+                              }}
+                              className="inline-flex items-center justify-center size-7 rounded-sm hover:bg-surface-soft transition-colors text-mute hover:text-ink"
+                              title="Copy URL"
+                            >
+                              <Copy className="size-3.5" />
+                            </button>
                             {paused && onResume && (
                               <button
                                 onClick={() => onResume(d.id)}
@@ -368,7 +411,7 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume }
                 >
                   {/* Top row: icon + filename + actions */}
                   <div className="flex items-start gap-2.5">
-                    <PlatformIcon videoType={d.video_type} className="size-5 mt-0.5" />
+                    <DownloadThumbnail download={d} className="size-10 mt-0.5" />
                     <div className="flex-1 min-w-0">
                       <button
                         onClick={() => showPreview && setPreviewId(d.id)}
@@ -407,6 +450,16 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume }
 
                   {/* Actions */}
                   <div className="flex items-center gap-1 pt-0.5">
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(d.url);
+                        toast.success("URL copied");
+                      }}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:text-primary transition-colors px-2 py-1 rounded-md hover:bg-accent"
+                    >
+                      <Copy className="size-3" />
+                      Copy
+                    </button>
                     {paused && onResume && (
                       <button
                         onClick={() => onResume(d.id)}

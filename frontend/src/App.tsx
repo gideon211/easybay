@@ -9,11 +9,12 @@ import { TorrentList } from "@/components/torrents/torrent-list";
 import { ImageTools } from "@/components/image-tools/image-tools";
 import { PassportPage } from "@/components/passport/passport-page";
 import { SettingsPage } from "@/components/settings/settings-page";
+import { FileBrowser } from "@/components/files/file-browser";
 import { LandingPage } from "@/components/landing/landing-page";
 import { useDownloads } from "@/hooks/use-downloads";
 import { useTorrents } from "@/hooks/use-torrents";
 
-const VALID_PAGES: Page[] = ["overview", "downloads", "torrents", "images", "passport", "settings"];
+const VALID_PAGES: Page[] = ["overview", "downloads", "torrents", "images", "passport", "files", "settings"];
 
 function getPageFromURL(): Page {
   const params = new URLSearchParams(window.location.search);
@@ -114,7 +115,7 @@ export default function App() {
       <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         <Header downloads={downloads} torrents={torrents} onNavigate={handleNavigate} />
 
-        <main className="flex-1 p-4 md:p-6">
+        <main className="flex-1 p-4 pb-16 md:p-6 md:pb-6">
             {page === "overview" && (
               <Dashboard
                 downloads={downloads}
@@ -181,6 +182,8 @@ export default function App() {
             {page === "images" && <ImageTools />}
 
             {page === "passport" && <PassportPage />}
+
+            {page === "files" && <FileBrowser />}
 
             {page === "settings" && <SettingsPage />}
           </main>

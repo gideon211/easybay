@@ -89,7 +89,11 @@ export function isAudioFile(filename: string | null): boolean {
  */
 export function formatQuality(quality: string): string {
   if (quality.startsWith("dash-")) return "DASH";
-  if (/^\d+$/.test(quality)) return `${quality}p`;
+  if (/^\d+$/.test(quality)) {
+    const n = parseInt(quality, 10);
+    if (n >= 144 && n <= 4320) return `${quality}p`;
+    return `Format ${quality}`;
+  }
   if (quality.startsWith("sb-")) return "Storyboard";
   return quality;
 }

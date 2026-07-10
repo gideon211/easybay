@@ -8,10 +8,11 @@ import {
   Menu,
   X,
   IdCard,
+  FolderOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type Page = "overview" | "downloads" | "torrents" | "images" | "passport" | "settings";
+export type Page = "overview" | "downloads" | "torrents" | "images" | "passport" | "files" | "settings";
 
 interface SidebarProps {
   active: Page;
@@ -24,6 +25,7 @@ const navItems: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "torrents", label: "Torrents", icon: Magnet },
   { id: "images", label: "Image Tools", icon: Image },
   { id: "passport", label: "Passport Photos", icon: IdCard },
+  { id: "files", label: "Files", icon: FolderOpen },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 

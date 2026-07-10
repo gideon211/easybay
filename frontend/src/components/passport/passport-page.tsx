@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Download, Search, Check, ChevronDown, RotateCcw,
-  Sparkles, Zap, Image as ImageIcon, Loader2, IdCard,
+  Sparkles, Zap, Image as ImageIcon, Loader2, IdCard, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn, formatBytes } from "@/lib/utils";
@@ -39,21 +39,15 @@ const COLOR_PRESETS = [
   { hex: "#e8e0ff", label: "Lavender" },
 ];
 
-const FORMAT_OPTIONS = [
-  { value: "png" as const, label: "PNG", desc: "Best quality" },
-  { value: "jpg" as const, label: "JPEG", desc: "Smaller file" },
-  { value: "webp" as const, label: "WebP", desc: "Modern format" },
-];
-
 export function PassportPage() {
   const inputRef = useRef<HTMLInputElement>(null);
-  const formatRef = useRef<HTMLDivElement>(null);
 
   const [countries, setCountries] = useState<CountrySpec[]>([]);
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [resultUrl, setResultUrl] = useState<string | null>(null);
-  const [resultBlob, setResultBlob] = useState<Blob | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const [singleResultUrl, setSingleResultUrl] = useState<string | null>(null);
+  const [singleResultBlob, setSingleResultBlob] = useState<Blob | null>(null);
+  const [batchResultBlob, setBatchResultBlob] = useState<Blob | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [dimensions, setDimensions] = useState<{ w: number; h: number } | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -63,9 +57,9 @@ export function PassportPage() {
   const [bgColor, setBgColor] = useState("#ffffff");
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [countrySearch, setCountrySearch] = useState("");
-  const [exportFormat, setExportFormat] = useState<"png" | "jpg" | "webp">("png");
-  const [showFormatMenu, setShowFormatMenu] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
+
+  const isBatch = files.length > 1;
 
   useEffect(() => {
     fetch("/api/passport/sizes")
@@ -79,28 +73,21 @@ export function PassportPage() {
   }, []);
 
   useEffect(() => {
-    if (!preview) return;
-    const img = document.createElement("img");
-    img.onload = () => setDimensions({ w: img.naturalWidth, h: img.naturalHeight });
-    img.src = preview;
-  }, [preview]);
+    if (!isBatch && previews[0]) {
+      const img = document.createElement("img");
+      img.onload = () => setDimensions({ w: img.naturalWidth, h: img.naturalHeight });
+      img.src = previews[0];
+    }
+  }, [previews, isBatch]);
 
   useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (formatRef.current && !formatRef.current.contains(e.target as Node)) {
-        setShowFormatMenu(false);
-      }
-    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setShowCountryDropdown(false);
-        setShowFormatMenu(false);
       }
     };
-    document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
   }, []);
@@ -134,46 +121,79 @@ export function PassportPage() {
     if (c) setBgColor(c.bg_color);
   }, [countries]);
 
-  const handleFile = useCallback((f: File) => {
-    if (!f.type.startsWith("image/")) return;
-    URL.revokeObjectURL(preview ?? "");
-    setFile(f);
-    setPreview(URL.createObjectURL(f));
-    setResultUrl(null);
-    setResultBlob(null);
+  const addFiles = useCallback((newFiles: FileList | File[]) => {
+    const list = Array.from(newFiles).filter((f) => f.type.startsWith("image/"));
+    if (list.length === 0) return;
+    setFiles(list);
+    setPreviews((prev) => {
+      prev.forEach((u) => URL.revokeObjectURL(u));
+      return list.map((f) => URL.createObjectURL(f));
+    });
+    setSingleResultUrl(null);
+    setSingleResultBlob(null);
+    setBatchResultBlob(null);
     setError(null);
-  }, [preview]);
+  }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    const f = e.dataTransfer.files[0];
-    if (f) handleFile(f);
-  }, [handleFile]);
+    if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
+  }, [addFiles]);
+
+  const removeFile = useCallback((index: number) => {
+    URL.revokeObjectURL(previews[index]);
+    const newFiles = files.filter((_, i) => i !== index);
+    const newPreviews = previews.filter((_, i) => i !== index);
+    setFiles(newFiles);
+    setPreviews(newPreviews);
+    setSingleResultUrl(null);
+    setSingleResultBlob(null);
+    setBatchResultBlob(null);
+  }, [files, previews]);
 
   const handleConvert = async () => {
-    if (!file || !selectedCountry) return;
+    if (!files.length || !selectedCountry) return;
     setProcessing(true);
     setError(null);
-    setResultUrl(null);
-    setResultBlob(null);
+    setSingleResultUrl(null);
+    setSingleResultBlob(null);
+    setBatchResultBlob(null);
 
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("country_code", selectedCountry.code);
-      fd.append("bg_color", bgColor);
+      if (!isBatch) {
+        const fd = new FormData();
+        fd.append("file", files[0]);
+        fd.append("country_code", selectedCountry.code);
+        fd.append("bg_color", bgColor);
 
-      const res = await fetch("/api/passport/convert", { method: "POST", body: fd });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: "Conversion failed" }));
-        throw new Error(err.detail || "Conversion failed");
+        const res = await fetch("/api/passport/convert", { method: "POST", body: fd });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: "Conversion failed" }));
+          throw new Error(err.detail || "Conversion failed");
+        }
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        setSingleResultBlob(blob);
+        setSingleResultUrl(url);
+      } else {
+        const fd = new FormData();
+        for (const f of files) {
+          fd.append("files", f);
+        }
+        fd.append("country_code", selectedCountry.code);
+        fd.append("bg_color", bgColor);
+
+        const res = await fetch("/api/passport/batch", { method: "POST", body: fd });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: "Batch conversion failed" }));
+          throw new Error(err.detail || "Batch conversion failed");
+        }
+
+        const blob = await res.blob();
+        setBatchResultBlob(blob);
       }
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      setResultBlob(blob);
-      setResultUrl(url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Conversion failed");
     } finally {
@@ -182,56 +202,41 @@ export function PassportPage() {
   };
 
   const handleDownload = async () => {
-    if (!resultBlob) return;
-    let blob = resultBlob;
-    const ext = exportFormat;
+    if (singleResultBlob) {
+      let blob = singleResultBlob;
 
-    if (ext === "jpg") {
-      const img = await createImageBitmap(blob);
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(img, 0, 0);
-      blob = await new Promise<Blob>((resolve) =>
-        canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.95)
-      );
-      img.close();
-    } else if (ext === "webp") {
-      const img = await createImageBitmap(blob);
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(img, 0, 0);
-      blob = await new Promise<Blob>((resolve) =>
-        canvas.toBlob((b) => resolve(b!), "image/webp", 0.95)
-      );
-      img.close();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `passport.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } else if (batchResultBlob) {
+      const url = URL.createObjectURL(batchResultBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "passport_photos.zip";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     }
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `passport.${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   const handleReset = () => {
-    URL.revokeObjectURL(preview ?? "");
-    URL.revokeObjectURL(resultUrl ?? "");
-    setFile(null);
-    setPreview(null);
-    setResultUrl(null);
-    setResultBlob(null);
+    previews.forEach((u) => URL.revokeObjectURL(u));
+    URL.revokeObjectURL(singleResultUrl ?? "");
+    setFiles([]);
+    setPreviews([]);
+    setSingleResultUrl(null);
+    setSingleResultBlob(null);
+    setBatchResultBlob(null);
     setError(null);
     setDimensions(null);
     setShowCompare(false);
     setShowCountryDropdown(false);
-    setShowFormatMenu(false);
   };
 
   const selectCountry = (code: string) => {
@@ -241,8 +246,9 @@ export function PassportPage() {
     updateBgFromCountry(code);
   };
 
-  const hasFile = !!file;
-  const hasResult = !!resultUrl;
+  const hasFiles = files.length > 0;
+  const hasSingleResult = !!singleResultUrl;
+  const hasBatchResult = !!batchResultBlob;
   const spec = selectedCountry;
 
   return (
@@ -255,7 +261,7 @@ export function PassportPage() {
       </div>
 
       <div className="bg-card border border-hairline overflow-hidden">
-        {!hasFile ? (
+        {!hasFiles ? (
           <label
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
@@ -272,9 +278,10 @@ export function PassportPage() {
             <input
               ref={inputRef}
               type="file"
+              multiple
               accept="image/png,image/jpeg,image/webp"
               className="hidden"
-              onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+              onChange={(e) => e.target.files && addFiles(e.target.files)}
             />
             <motion.div
               key="empty"
@@ -293,13 +300,13 @@ export function PassportPage() {
                 <IdCard className="size-8 text-ink/70" />
               </motion.div>
               <div className="text-center">
-                <p className="font-semibold text-base">Upload a portrait photo</p>
-                <p className="text-sm text-mute mt-1">or click to browse · PNG, JPEG, WebP</p>
+                <p className="font-semibold text-base">Upload portrait photos</p>
+                <p className="text-sm text-mute mt-1">or click to browse · PNG, JPEG, WebP (single or batch)</p>
               </div>
               <div className="flex items-center gap-3 mt-2">
                 {[
                   { icon: Sparkles, label: "Face Detection" },
-                  { icon: Zap, label: "Instant" },
+                  { icon: Zap, label: "Batch Ready" },
                   { icon: ImageIcon, label: "30+ Countries" },
                 ].map((f) => (
                   <div key={f.label} className="flex items-center gap-1.5 text-[10px] text-mute font-medium tracking-wider uppercase px-2 py-1 border border-hairline rounded-sm">
@@ -312,133 +319,35 @@ export function PassportPage() {
           </label>
         ) : (
           <>
-            {/* Preview canvas */}
-            <div className="relative min-h-[420px] flex items-center justify-center" style={checkerStyle}>
-              {processing ? (
-                <div className="relative w-full min-h-[420px] flex items-center justify-center overflow-hidden">
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="flex flex-col items-center gap-4"
-                  >
-                    <div className="relative size-12">
-                      <span className="absolute inset-0 rounded-full border-2 border-ink/20" />
-                      <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-ink animate-spin" />
+            {/* Content area */}
+            {isBatch ? (
+              /* Batch mode: file list */
+              <div className="min-h-[200px]">
+                {/* File list */}
+                <div className="divide-y divide-hairline max-h-[320px] overflow-y-auto">
+                  {files.map((f, i) => (
+                    <div key={i} className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-soft transition-colors">
+                      <div className="size-9 rounded-sm overflow-hidden bg-surface-card shrink-0 border border-hairline">
+                        {previews[i] && <img src={previews[i]} alt="" className="size-full object-cover" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-ink truncate">{f.name}</p>
+                        <p className="text-[11px] text-mute">{formatBytes(f.size)}</p>
+                      </div>
+                      {!processing && (
+                        <button
+                          onClick={() => removeFile(i)}
+                          className="inline-flex items-center justify-center size-7 rounded-sm hover:bg-destructive/10 transition-colors text-mute hover:text-destructive shrink-0"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      )}
                     </div>
-                    <div className="text-center">
-                      <p className="text-sm font-medium text-ink">Processing your photo...</p>
-                      <p className="text-xs text-mute mt-0.5">Detecting face & applying passport spec</p>
-                    </div>
-                  </motion.div>
-                  <motion.div
-                    className="absolute inset-x-[15%] h-px bg-gradient-to-r from-transparent via-ink/20 to-transparent"
-                    animate={{ top: ["-5%", "105%"] }}
-                    transition={{ duration: 2, repeat: Infinity, ease: [0.4, 0, 0.6, 1] }}
-                  />
-                </div>
-              ) : hasResult ? (
-                <div className="relative w-full min-h-[420px] flex items-center justify-center p-8">
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={softSpring}
-                    className="relative"
-                  >
-                    <img
-                      src={showCompare ? preview! : resultUrl!}
-                      alt={showCompare ? "Original" : "Passport photo"}
-                      className="max-w-full max-h-[480px] object-contain shadow-[0_0_0_1px_rgba(0,0,0,0.06)]"
-                      draggable={false}
-                    />
-                    {/* Specs overlay badge */}
-                    {spec && !showCompare && (
-                      <motion.div
-                        initial={{ opacity: 0, x: -8 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.3 }}
-                        className="absolute top-3 left-3 flex items-center gap-2 px-2.5 py-1.5 rounded-sm bg-ink/85 text-on-dark text-[11px] leading-none"
-                      >
-                        <span className="font-semibold tracking-wider">{spec.width_mm}×{spec.height_mm}mm</span>
-                        <span className="opacity-40">|</span>
-                        <span>{spec.dpi}DPI</span>
-                        <span className="opacity-40">|</span>
-                        <span className="capitalize">{bgColor === spec.bg_color ? spec.bg_color_name : "Custom"}</span>
-                      </motion.div>
-                    )}
-                    {/* Original inset badge */}
-                    {!showCompare && (
-                      <button
-                        onClick={() => setShowCompare(true)}
-                        className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2 py-1.5 rounded-sm bg-canvas/90 border border-hairline text-[10px] text-mute font-medium hover:text-ink transition-colors cursor-pointer"
-                      >
-                        <span className="size-2 rounded-sm bg-surface-card border border-hairline overflow-hidden shrink-0">
-                          <img src={preview!} alt="" className="size-full object-cover" />
-                        </span>
-                        Original
-                      </button>
-                    )}
-                    {showCompare && (
-                      <button
-                        onClick={() => setShowCompare(false)}
-                        className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2 py-1.5 rounded-sm bg-canvas/90 border border-hairline text-[10px] text-mute font-medium hover:text-ink transition-colors cursor-pointer"
-                      >
-                        <span className="size-2 rounded-sm bg-ink shrink-0" />
-                        Result
-                      </button>
-                    )}
-                  </motion.div>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center w-full p-6 min-h-[420px]">
-                  <motion.img
-                    initial={{ opacity: 0, scale: 0.96 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={softSpring}
-                    src={preview!}
-                    alt="Preview"
-                    className="max-w-full max-h-[480px] object-contain"
-                    draggable={false}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Action bar */}
-            <AnimatePresence>
-              <motion.div
-                key="bar"
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={fastSpring}
-                className="border-t border-hairline"
-              >
-                {/* File info */}
-                <div className="flex items-center gap-3 px-4 py-3 border-b border-hairline">
-                  <div className="size-9 rounded-sm overflow-hidden bg-surface-card shrink-0 border border-hairline">
-                    {preview && <img src={preview} alt="" className="size-full object-cover" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-ink truncate max-w-[200px]">{file?.name}</p>
-                    <p className="text-[11px] text-mute flex items-center gap-1">
-                      {dimensions && <span>{dimensions.w}×{dimensions.h}</span>}
-                      {dimensions && file && <span>·</span>}
-                      {file && <span>{formatBytes(file.size)}</span>}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleReset}
-                    className="size-8 active:scale-[0.95] transition-transform shrink-0"
-                    title="Start over"
-                  >
-                    <RotateCcw className="size-3.5" />
-                  </Button>
+                  ))}
                 </div>
 
                 {/* Controls */}
-                <div className="flex flex-wrap items-end gap-3 px-4 py-3">
-                  {/* Country selector */}
+                <div className="flex flex-wrap items-end gap-3 px-4 py-3 border-t border-hairline">
                   <div className="relative min-w-0 flex-1 basis-[200px]">
                     <label className="block text-[10px] font-medium text-mute uppercase tracking-wider mb-1.5">
                       Country / Region
@@ -465,8 +374,6 @@ export function PassportPage() {
                       <ChevronDown className="size-3 text-mute" />
                     </button>
                   </div>
-
-                  {/* BG Color */}
                   <div className="min-w-0 flex-shrink-0">
                     <label className="block text-[10px] font-medium text-mute uppercase tracking-wider mb-1.5">
                       Background
@@ -486,12 +393,7 @@ export function PassportPage() {
                           title={preset.label}
                         >
                           {bgColor === preset.hex && (
-                            <Check className={cn(
-                              "size-3.5",
-                              preset.hex === "#ffffff" || preset.hex === "#f0f5ff" || preset.hex === "#fef3cd"
-                                ? "text-ink"
-                                : "text-white",
-                            )} />
+                            <Check className={cn("size-3.5", preset.hex === "#ffffff" || preset.hex === "#f0f5ff" || preset.hex === "#fef3cd" ? "text-ink" : "text-white")} />
                           )}
                         </button>
                       ))}
@@ -506,104 +408,293 @@ export function PassportPage() {
                       </div>
                     </div>
                   </div>
-
-                  {/* Convert button */}
-                  <div className="flex-shrink-0 self-end">
+                  <div className="flex-shrink-0 self-end flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleReset}
+                      disabled={processing}
+                      className="gap-1.5"
+                    >
+                      <RotateCcw className="size-3.5" />
+                      Reset
+                    </Button>
                     <Button
                       onClick={handleConvert}
-                      disabled={processing || !file}
+                      disabled={processing || !files.length}
                       size="sm"
                       className="gap-1.5 active:scale-[0.97] transition-transform min-w-[140px]"
                     >
                       {processing ? (
                         <>
                           <Loader2 className="size-3.5 animate-spin" />
-                          Processing...
+                          Processing {files.length} photos...
+                        </>
+                      ) : hasBatchResult ? (
+                        <>
+                          <IdCard className="size-3.5" />
+                          Reconvert All
                         </>
                       ) : (
                         <>
                           <IdCard className="size-3.5" />
-                          {hasResult ? "Reconvert" : "Convert to Passport"}
+                          Convert All ({files.length})
                         </>
                       )}
                     </Button>
+                    {hasBatchResult && (
+                      <Button
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={handleDownload}
+                      >
+                        <Download className="size-3.5" />
+                        Download ZIP
+                      </Button>
+                    )}
                   </div>
                 </div>
+              </div>
+            ) : (
+              /* Single-file mode: preview + controls */
+              <>
+                {/* Preview canvas */}
+                <div className="relative min-h-[420px] flex items-center justify-center" style={checkerStyle}>
+                  {processing ? (
+                    <div className="relative w-full min-h-[420px] flex items-center justify-center overflow-hidden">
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="flex flex-col items-center gap-4"
+                      >
+                        <div className="relative size-12">
+                          <span className="absolute inset-0 rounded-full border-2 border-ink/20" />
+                          <span className="absolute inset-0 rounded-full border-2 border-transparent border-t-ink animate-spin" />
+                        </div>
+                        <div className="text-center">
+                          <p className="text-sm font-medium text-ink">Processing your photo...</p>
+                          <p className="text-xs text-mute mt-0.5">Detecting face & applying passport spec</p>
+                        </div>
+                      </motion.div>
+                      <motion.div
+                        className="absolute inset-x-[15%] h-px bg-gradient-to-r from-transparent via-ink/20 to-transparent"
+                        animate={{ top: ["-5%", "105%"] }}
+                        transition={{ duration: 2, repeat: Infinity, ease: [0.4, 0, 0.6, 1] }}
+                      />
+                    </div>
+                  ) : hasSingleResult ? (
+                    <div className="relative w-full min-h-[420px] flex items-center justify-center p-8">
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={softSpring}
+                        className="relative"
+                      >
+                        <img
+                          src={showCompare ? previews[0]! : singleResultUrl!}
+                          alt={showCompare ? "Original" : "Passport photo"}
+                          className="max-w-full max-h-[480px] object-contain shadow-[0_0_0_1px_rgba(0,0,0,0.06)]"
+                          draggable={false}
+                        />
+                        {spec && !showCompare && (
+                          <motion.div
+                            initial={{ opacity: 0, x: -8 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.3 }}
+                            className="absolute top-3 left-3 flex items-center gap-2 px-2.5 py-1.5 rounded-sm bg-ink/85 text-on-dark text-[11px] leading-none"
+                          >
+                            <span className="font-semibold tracking-wider">{spec.width_mm}×{spec.height_mm}mm</span>
+                            <span className="opacity-40">|</span>
+                            <span>{spec.dpi}DPI</span>
+                            <span className="opacity-40">|</span>
+                            <span className="capitalize">{bgColor === spec.bg_color ? spec.bg_color_name : "Custom"}</span>
+                          </motion.div>
+                        )}
+                        {!showCompare && (
+                          <button
+                            onClick={() => setShowCompare(true)}
+                            className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2 py-1.5 rounded-sm bg-canvas/90 border border-hairline text-[10px] text-mute font-medium hover:text-ink transition-colors cursor-pointer"
+                          >
+                            <span className="size-2 rounded-sm bg-surface-card border border-hairline overflow-hidden shrink-0">
+                              <img src={previews[0]!} alt="" className="size-full object-cover" />
+                            </span>
+                            Original
+                          </button>
+                        )}
+                        {showCompare && (
+                          <button
+                            onClick={() => setShowCompare(false)}
+                            className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2 py-1.5 rounded-sm bg-canvas/90 border border-hairline text-[10px] text-mute font-medium hover:text-ink transition-colors cursor-pointer"
+                          >
+                            <span className="size-2 rounded-sm bg-ink shrink-0" />
+                            Result
+                          </button>
+                        )}
+                      </motion.div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center w-full p-6 min-h-[420px]">
+                      <motion.img
+                        initial={{ opacity: 0, scale: 0.96 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={softSpring}
+                        src={previews[0]!}
+                        alt="Preview"
+                        className="max-w-full max-h-[480px] object-contain"
+                        draggable={false}
+                      />
+                    </div>
+                  )}
+                </div>
 
-                {/* Download row */}
-                {hasResult && (
+                {/* Action bar */}
+                <AnimatePresence>
                   <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
+                    key="bar"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={fastSpring}
                     className="border-t border-hairline"
                   >
-                    <div className="flex items-center justify-between gap-3 px-4 py-3">
-                      <div className="flex items-center gap-2 text-[11px] text-mute">
-                        <span className="text-ink font-medium">
-                          {resultBlob ? formatBytes(resultBlob.size) : "—"}
-                        </span>
-                        <span className="text-hairline-strong">·</span>
-                        <span>
-                          {spec?.country} · {spec?.width_mm}×{spec?.height_mm}mm · {spec?.dpi}DPI
-                        </span>
+                    <div className="flex items-center gap-3 px-4 py-3 border-b border-hairline">
+                      <div className="size-9 rounded-sm overflow-hidden bg-surface-card shrink-0 border border-hairline">
+                        {previews[0] && <img src={previews[0]} alt="" className="size-full object-cover" />}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <div className="relative" ref={formatRef}>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setShowFormatMenu(!showFormatMenu)}
-                            className="gap-1.5 w-[130px] justify-between active:scale-[0.97] transition-transform"
-                          >
-                            <span>{exportFormat.toUpperCase()}</span>
-                            <ChevronDown className="size-3" />
-                          </Button>
-                          <AnimatePresence>
-                            {showFormatMenu && (
-                              <motion.div
-                                initial={{ opacity: 0, y: -4 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -4 }}
-                                transition={{ duration: 0.15 }}
-                                className="absolute right-0 bottom-full mb-1 bg-canvas border border-hairline rounded-sm z-50 py-1 min-w-[130px]"
-                              >
-                                {FORMAT_OPTIONS.map((opt) => (
-                                  <button
-                                    key={opt.value}
-                                    onClick={() => {
-                                      setExportFormat(opt.value);
-                                      setShowFormatMenu(false);
-                                    }}
-                                    className={cn(
-                                      "flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left transition-colors",
-                                      exportFormat === opt.value
-                                        ? "text-ink bg-surface-soft"
-                                        : "text-body hover:bg-surface-soft",
-                                    )}
-                                  >
-                                    <span className="flex-1">{opt.label}</span>
-                                    <span className="text-[10px] text-mute">{opt.desc}</span>
-                                    {exportFormat === opt.value && <Check className="size-3" />}
-                                  </button>
-                                ))}
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                        <Button
-                          size="sm"
-                          className="gap-1.5 active:scale-[0.97] transition-transform"
-                          onClick={handleDownload}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-ink truncate max-w-[200px]">{files[0]?.name}</p>
+                        <p className="text-[11px] text-mute flex items-center gap-1">
+                          {dimensions && <span>{dimensions.w}×{dimensions.h}</span>}
+                          {dimensions && files[0] && <span>·</span>}
+                          {files[0] && <span>{formatBytes(files[0].size)}</span>}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleReset}
+                        className="size-8 active:scale-[0.95] transition-transform shrink-0"
+                        title="Start over"
+                      >
+                        <RotateCcw className="size-3.5" />
+                      </Button>
+                    </div>
+
+                    <div className="flex flex-wrap items-end gap-3 px-4 py-3">
+                      <div className="relative min-w-0 flex-1 basis-[200px]">
+                        <label className="block text-[10px] font-medium text-mute uppercase tracking-wider mb-1.5">
+                          Country / Region
+                        </label>
+                        <button
+                          onClick={() => setShowCountryDropdown(true)}
+                          className={cn(
+                            "flex items-center gap-2 w-full h-9 px-3 text-sm rounded-sm border transition-all cursor-pointer",
+                            "bg-surface-soft text-ink hover:bg-surface-card",
+                            "border-hairline hover:border-body/30",
+                          )}
                         >
-                          <Download className="size-3.5" />
-                          Download
+                          {spec ? (
+                            <>
+                              <span className="text-base leading-none">{spec.emoji}</span>
+                              <span className="flex-1 truncate text-left">{spec.country}</span>
+                              <span className="text-[10px] text-mute tabular-nums shrink-0">
+                                {spec.width_mm}×{spec.height_mm}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-mute flex-1 text-left">Select country</span>
+                          )}
+                          <ChevronDown className="size-3 text-mute" />
+                        </button>
+                      </div>
+
+                      <div className="min-w-0 flex-shrink-0">
+                        <label className="block text-[10px] font-medium text-mute uppercase tracking-wider mb-1.5">
+                          Background
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          {COLOR_PRESETS.map((preset) => (
+                            <button
+                              key={preset.hex}
+                              onClick={() => setBgColor(preset.hex)}
+                              className={cn(
+                                "size-9 rounded-sm border transition-all cursor-pointer relative flex items-center justify-center",
+                                bgColor === preset.hex
+                                  ? "border-ink scale-110"
+                                  : "border-hairline hover:border-body/30 hover:scale-105",
+                              )}
+                              style={{ backgroundColor: preset.hex }}
+                              title={preset.label}
+                            >
+                              {bgColor === preset.hex && (
+                                <Check className={cn("size-3.5", preset.hex === "#ffffff" || preset.hex === "#f0f5ff" || preset.hex === "#fef3cd" ? "text-ink" : "text-white")} />
+                              )}
+                            </button>
+                          ))}
+                          <div className="relative">
+                            <input
+                              type="color"
+                              value={bgColor}
+                              onChange={(e) => setBgColor(e.target.value)}
+                              className="size-9 rounded-sm border border-hairline cursor-pointer appearance-none bg-transparent p-0.5 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-sm [&::-webkit-color-swatch]:border-none"
+                              title="Custom color"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex-shrink-0 self-end">
+                        <Button
+                          onClick={handleConvert}
+                          disabled={processing || !files.length}
+                          size="sm"
+                          className="gap-1.5 active:scale-[0.97] transition-transform min-w-[140px]"
+                        >
+                          {processing ? (
+                            <>
+                              <Loader2 className="size-3.5 animate-spin" />
+                              Processing...
+                            </>
+                          ) : (
+                            <>
+                              <IdCard className="size-3.5" />
+                              {hasSingleResult ? "Reconvert" : "Convert to Passport"}
+                            </>
+                          )}
                         </Button>
                       </div>
                     </div>
+
+                    {hasSingleResult && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        className="border-t border-hairline"
+                      >
+                        <div className="flex items-center justify-between gap-3 px-4 py-3">
+                          <div className="flex items-center gap-2 text-[11px] text-mute">
+                            <span className="text-ink font-medium">
+                              {singleResultBlob ? formatBytes(singleResultBlob.size) : "—"}
+                            </span>
+                            <span className="text-hairline-strong">·</span>
+                            <span>
+                              {spec?.country} · {spec?.width_mm}×{spec?.height_mm}mm · {spec?.dpi}DPI
+                            </span>
+                          </div>
+                          <Button
+                            size="sm"
+                            className="gap-1.5 active:scale-[0.97] transition-transform"
+                            onClick={handleDownload}
+                          >
+                            <Download className="size-3.5" />
+                            Download
+                          </Button>
+                        </div>
+                      </motion.div>
+                    )}
                   </motion.div>
-                )}
-              </motion.div>
-            </AnimatePresence>
+                </AnimatePresence>
+              </>
+            )}
           </>
         )}
       </div>
