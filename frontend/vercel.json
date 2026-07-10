@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://easybay.fly.dev/api/:path*"
+    }
+  ]
+}
