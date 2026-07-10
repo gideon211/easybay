@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Download videos from YouTube, TikTok, Instagram, and Twitter"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "yt-dlp>=2026.7.4",
     "typer[all]>=0.26.8",
@@ -20,8 +20,8 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "websockets>=16.0",
     "aiotorrent>=0.9.0",
-    "rembg[birefnet-general]>=2.0.75",
-    "mediapipe>=0.10.35",
+    "rembg[cpu]>=2.0.75",
+    "mediapipe>=0.10.13",
     "Pillow>=11.0.0",
     "psutil>=7.0.0",
 ]
