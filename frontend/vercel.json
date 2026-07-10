@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://easybay.fly.dev/api/:path*"
+      "destination": "http://92.4.140.128:8000/:path*"
     }
   ]
 }
