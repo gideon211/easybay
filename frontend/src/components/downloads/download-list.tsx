@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 import {
-  Inbox, Loader2, ExternalLink, Trash2, RefreshCw,
+  Inbox, Loader2, Download as DownloadIcon, Trash2, RefreshCw,
   Pause, Play, Youtube, Music, Camera,
   MessageCircle, Globe, CheckCircle2, XCircle,
   Clock, ArrowUpDown, Copy
@@ -10,7 +10,7 @@ import { MediaPreview } from "./media-preview";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { cn, formatQuality } from "@/lib/utils";
-import { getDownloadFileUrl } from "@/lib/api";
+import { getDownloadStreamUrl } from "@/lib/api";
 import type { Download } from "@/lib/api";
 
 type StatusFilter = "all" | "active" | "completed" | "failed";
@@ -266,7 +266,6 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume, 
                 </thead>
                 <tbody className="divide-y divide-hairline">
                   {filtered.map((d) => {
-                    const fileUrl = getDownloadFileUrl(d.id);
                     const active = isActive(d);
                     const paused = isPaused(d);
                     const fileExt = d.filename?.split(".").pop()?.toUpperCase();
@@ -387,13 +386,11 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume, 
                             )}
                             {d.status === "completed" && d.filename && (
                               <a
-                                href={fileUrl}
-                                target="_blank"
-                                rel="noreferrer"
+                                href={getDownloadStreamUrl(d.id)}
                                 className="inline-flex items-center justify-center size-7 rounded-sm hover:bg-surface-soft transition-colors text-mute hover:text-ink"
-                                title="Open file"
+                                title="Save to device"
                               >
-                                <ExternalLink className="size-3.5" />
+                                <DownloadIcon className="size-3.5" />
                               </a>
                             )}
                             <button
@@ -416,7 +413,6 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume, 
           {/* Mobile list */}
           <div className="md:hidden space-y-2">
             {filtered.map((d) => {
-              const fileUrl = getDownloadFileUrl(d.id);
               const active = isActive(d);
               const paused = isPaused(d);
               const showPreview = d.status === "completed";
@@ -511,13 +507,11 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume, 
                     )}
                     {d.status === "completed" && d.filename && (
                       <a
-                        href={fileUrl}
-                        target="_blank"
-                        rel="noreferrer"
+                        href={getDownloadStreamUrl(d.id)}
                         className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:text-primary transition-colors px-2 py-1 rounded-md hover:bg-accent"
                       >
-                        <ExternalLink className="size-3" />
-                        Open
+                        <DownloadIcon className="size-3" />
+                        Save
                       </a>
                     )}
                     <button

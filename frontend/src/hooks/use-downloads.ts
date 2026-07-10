@@ -7,6 +7,7 @@ import {
   resumeDownload,
   retryDownload,
   clearFailedDownloads,
+  getDownloadStreamUrl,
   type Download,
   type DownloadRequest,
 } from "@/lib/api";
@@ -99,9 +100,16 @@ export function useDownloads() {
                   }
                 : d
             );
-            if (data.status === "completed" && !wasCompleted && !notifiedIds.current.has(downloadId)) {
-              notifiedIds.current.add(downloadId);
-              notifyComplete("Download complete", data.filename ?? undefined);
+            if (data.status === "completed" && !wasCompleted) {
+              if (!notifiedIds.current.has(downloadId)) {
+                notifiedIds.current.add(downloadId);
+                notifyComplete("Download complete", data.filename ?? undefined);
+              }
+              const streamUrl = getDownloadStreamUrl(downloadId);
+              const a = document.createElement("a");
+              a.href = streamUrl;
+              a.download = "";
+              a.click();
             }
             return next;
           });

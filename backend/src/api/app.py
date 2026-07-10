@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import threading
+import time
 import urllib.parse
 import urllib.request
 import uuid
@@ -17,6 +18,7 @@ import yt_dlp
 from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from fastbencode import bencode
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -40,13 +42,31 @@ executor = ThreadPoolExecutor(max_workers=config.max_concurrent_downloads)
 progress_connections: dict[int, list[asyncio.Queue]] = {}
 torrent_progress_connections: dict[str, list[asyncio.Queue]] = {}
 pause_events: dict[int, threading.Event] = {}
+_cleanup_stop = threading.Event()
+
+def _cleanup_old_files():
+    while not _cleanup_stop.is_set():
+        try:
+            now = time.time()
+            cutoff = now - 3600
+            for f in config.download_dir.iterdir():
+                if f.is_file() and f.stat().st_mtime < cutoff:
+                    f.unlink(missing_ok=True)
+        except Exception:
+            pass
+        _cleanup_stop.wait(1800)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     config.ensure_dirs()
     tm = get_torrent_manager()
     tm.start()
+    cleanup_thread = threading.Thread(target=_cleanup_old_files, daemon=True)
+    cleanup_thread.start()
     yield
+    _cleanup_stop.set()
+    cleanup_thread.join(timeout=5)
     tm.stop()
 
 
@@ -464,6 +484,80 @@ def get_download_file(download_id: int, db: Session = Depends(get_db)):
             "Accept-Ranges": "bytes",
         },
     )
+
+
+@app.get("/api/downloads/{download_id}/stream")
+def stream_download_file(download_id: int, db: Session = Depends(get_db)):
+    download = db.query(Download).filter(Download.id == download_id).first()
+    if not download:
+        raise HTTPException(status_code=404, detail="Download not found")
+    if not download.filename:
+        raise HTTPException(status_code=404, detail="File not available")
+
+    filepath = config.download_dir / download.filename
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="File expired — re-download from source")
+
+    ext = Path(download.filename).suffix.lower()
+    media_types = {
+        ".mp4": "video/mp4",
+        ".webm": "video/webm",
+        ".mkv": "video/x-matroska",
+        ".mp3": "audio/mpeg",
+        ".m4a": "audio/mp4",
+        ".wav": "audio/wav",
+        ".aac": "audio/aac",
+        ".flac": "audio/flac",
+        ".ogg": "audio/ogg",
+    }
+
+    def cleanup():
+        try:
+            if filepath.exists():
+                filepath.unlink()
+            with SessionLocal() as clean_db:
+                d = clean_db.query(Download).filter(Download.id == download_id).first()
+                if d:
+                    d.file_size = None
+                    clean_db.commit()
+        except Exception:
+            pass
+
+    file_size = filepath.stat().st_size
+    return FileResponse(
+        path=str(filepath),
+        filename=download.filename,
+        media_type=media_types.get(ext, "application/octet-stream"),
+        content_disposition_type="attachment",
+        headers={
+            "Content-Length": str(file_size),
+            "Content-Disposition": f'attachment; filename="{download.filename}"',
+        },
+        background=BackgroundTask(cleanup),
+    )
+
+
+@app.post("/api/downloads/{download_id}/re-download")
+def redownload(download_id: int, db: Session = Depends(get_db)):
+    existing = db.query(Download).filter(Download.id == download_id).first()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Download not found")
+
+    new_dl = Download(
+        url=existing.url,
+        video_type=existing.video_type,
+        quality=existing.quality,
+        status="pending",
+        remove_watermark=existing.remove_watermark,
+    )
+    db.add(new_dl)
+    db.commit()
+    db.refresh(new_dl)
+
+    pause_events[new_dl.id] = threading.Event()
+    executor.submit(run_download, new_dl.id, new_dl.url, new_dl.quality)
+
+    return DownloadResponse(**new_dl.to_dict())
 
 
 @app.get("/api/downloads/{download_id}/thumbnail")

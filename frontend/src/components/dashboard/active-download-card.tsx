@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  ExternalLink,
+  Download as DownloadIcon,
   Trash2, RefreshCw,
   CheckCircle,
   XCircle,
@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn, formatBytes, formatQuality, getThumbnailUrl } from "@/lib/utils";
-import { getDownloadFileUrl } from "@/lib/api";
+import { getDownloadStreamUrl } from "@/lib/api";
 import type { Download } from "@/lib/api";
 
 
@@ -66,7 +66,6 @@ export function ActiveDownloadCard({ download, onDelete, onPause, onResume, onRe
   const StatusIcon = statusConfig.icon;
   const isActive = ["pending", "downloading"].includes(download.status);
   const isPaused = download.status === "paused";
-  const fileUrl = getDownloadFileUrl(download.id);
 
   useEffect(() => {
     if (download.video_type !== "youtube") {
@@ -156,13 +155,11 @@ export function ActiveDownloadCard({ download, onDelete, onPause, onResume, onRe
         <div className="flex items-center gap-1 pt-1">
           {download.status === "completed" && download.filename && (
             <a
-              href={fileUrl}
-              target="_blank"
-              rel="noreferrer"
+              href={getDownloadStreamUrl(download.id)}
               className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1.5")}
             >
-              <ExternalLink className="size-3" />
-              Open
+              <DownloadIcon className="size-3" />
+              Save to device
             </a>
           )}
 

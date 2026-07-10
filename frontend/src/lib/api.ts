@@ -70,6 +70,13 @@ export function getDownloadFileUrl(id: number): string {
 }
 
 /**
+ * Get the stream download URL (triggers browser save-to-device).
+ */
+export function getDownloadStreamUrl(id: number): string {
+  return `${API_BASE}/downloads/${id}/stream`;
+}
+
+/**
  * Delete a download and its associated file.
  */
 export async function deleteDownload(id: number): Promise<void> {
@@ -107,6 +114,17 @@ export async function retryDownload(id: number): Promise<Download> {
     method: "POST",
   });
   if (!response.ok) throw new Error("Failed to retry download");
+  return response.json();
+}
+
+/**
+ * Re-download an expired file (creates a new download entry).
+ */
+export async function reDownload(id: number): Promise<Download> {
+  const response = await fetch(`${API_BASE}/downloads/${id}/re-download`, {
+    method: "POST",
+  });
+  if (!response.ok) throw new Error("Failed to re-download");
   return response.json();
 }
 
