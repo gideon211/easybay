@@ -1,25 +1,6 @@
 import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import {
-  Download as DownloadIcon,
-  Trash2, RefreshCw,
-  CheckCircle,
-  XCircle,
-  Loader2,
-  Pause,
-  Play,
-  Music,
-  Youtube,
-  Globe,
-  Camera,
-  MessageCircle,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
-import { cn, formatBytes, formatQuality, getThumbnailUrl } from "@/lib/utils";
-import { getDownloadStreamUrl } from "@/lib/api";
-import type { Download } from "@/lib/api";
 
 
 interface ActiveDownloadCardProps {
