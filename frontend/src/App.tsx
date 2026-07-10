@@ -53,6 +53,8 @@ export default function App() {
     removeDownload,
     pauseDownload,
     resumeDownload,
+    retryDownload,
+    clearFailedDownloads,
   } = useDownloads();
   const {
     torrents,
@@ -126,6 +128,7 @@ export default function App() {
                 onDeleteDownload={removeDownload}
                 onPauseDownload={pauseDownload}
                 onResumeDownload={resumeDownload}
+                onRetryDownload={retryDownload}
                 isSubmitting={isSubmitting}
                 onNavigate={(p) => handleNavigate(p as Page)}
               />
@@ -150,6 +153,8 @@ export default function App() {
                   onDelete={removeDownload}
                   onPause={pauseDownload}
                   onResume={resumeDownload}
+                  onRetry={retryDownload}
+                  onClearFailed={clearFailedDownloads}
                 />
               </div>
             )}

@@ -99,6 +99,27 @@ export async function resumeDownload(id: number): Promise<void> {
   if (!response.ok) throw new Error("Failed to resume download");
 }
 
+/**
+ * Retry a failed download.
+ */
+export async function retryDownload(id: number): Promise<Download> {
+  const response = await fetch(`${API_BASE}/downloads/${id}/retry`, {
+    method: "POST",
+  });
+  if (!response.ok) throw new Error("Failed to retry download");
+  return response.json();
+}
+
+/**
+ * Clear all failed downloads.
+ */
+export async function clearFailedDownloads(): Promise<void> {
+  const response = await fetch(`${API_BASE}/downloads/clear-failed`, {
+    method: "POST",
+  });
+  if (!response.ok) throw new Error("Failed to clear failed downloads");
+}
+
 export interface Torrent {
   id: number;
   magnet: string;

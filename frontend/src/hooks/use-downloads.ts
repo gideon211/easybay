@@ -5,6 +5,8 @@ import {
   deleteDownload,
   pauseDownload,
   resumeDownload,
+  retryDownload,
+  clearFailedDownloads,
   type Download,
   type DownloadRequest,
 } from "@/lib/api";
@@ -161,6 +163,28 @@ export function useDownloads() {
     []
   );
 
+  const retry = useCallback(
+    async (id: number) => {
+      try {
+        const download = await retryDownload(id);
+        setDownloads((prev) => prev.map((d) => (d.id === id ? download : d)));
+        connectToProgress(id);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to retry download");
+      }
+    },
+    [connectToProgress]
+  );
+
+  const clearFailed = useCallback(async () => {
+    try {
+      await clearFailedDownloads();
+      setDownloads((prev) => prev.filter((d) => d.status !== "failed"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to clear failed downloads");
+    }
+  }, []);
+
   // Clean up all connections on unmount
   useEffect(() => {
     return () => {
@@ -177,6 +201,8 @@ export function useDownloads() {
     removeDownload,
     pauseDownload: pause,
     resumeDownload: resume,
+    retryDownload: retry,
+    clearFailedDownloads: clearFailed,
     refresh: fetchDownloads,
   };
 }

@@ -24,6 +24,7 @@ interface DashboardProps {
   onDeleteDownload: (id: number) => void;
   onPauseDownload?: (id: number) => void;
   onResumeDownload?: (id: number) => void;
+  onRetryDownload?: (id: number) => void;
   isSubmitting: boolean;
   onNavigate?: (page: string) => void;
 }
@@ -148,6 +149,7 @@ export function Dashboard({
                     onDelete={onDeleteDownload}
                     onPause={onPauseDownload}
                     onResume={onResumeDownload}
+                    onRetry={onRetryDownload}
                   />
                 ))}
               </div>

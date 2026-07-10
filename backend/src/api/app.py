@@ -364,6 +364,43 @@ def pause_download(download_id: int, db: Session = Depends(get_db)):
     return {"message": "Download paused"}
 
 
+@app.post("/api/downloads/clear-failed")
+def clear_failed_downloads(db: Session = Depends(get_db)):
+    failed = db.query(Download).filter(Download.status == "failed").all()
+    count = len(failed)
+    for d in failed:
+        if d.filename:
+            filepath = config.download_dir / d.filename
+            if filepath.exists():
+                filepath.unlink()
+        pause_events.pop(d.id, None)
+        db.delete(d)
+    db.commit()
+    return {"message": f"Cleared {count} failed downloads"}
+
+
+@app.post("/api/downloads/{download_id}/retry")
+def retry_download(download_id: int, db: Session = Depends(get_db)):
+    download = db.query(Download).filter(Download.id == download_id).first()
+    if not download:
+        raise HTTPException(status_code=404, detail="Download not found")
+
+    download.status = "pending"
+    download.error_message = None
+    download.progress = 0.0
+    download.speed = None
+    download.eta = None
+    download.filename = None
+    download.file_size = None
+    download.completed_at = None
+    db.commit()
+
+    pause_events[download.id] = threading.Event()
+    executor.submit(run_download, download.id, download.url, download.quality)
+
+    return DownloadResponse(**download.to_dict())
+
+
 @app.post("/api/downloads/{download_id}/resume")
 def resume_download(download_id: int, db: Session = Depends(get_db)):
     download = db.query(Download).filter(Download.id == download_id).first()

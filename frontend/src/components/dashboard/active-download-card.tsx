@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   ExternalLink,
-  Trash2,
+  Trash2, RefreshCw,
   CheckCircle,
   XCircle,
   Loader2,
@@ -26,6 +26,7 @@ interface ActiveDownloadCardProps {
   onDelete: (id: number) => void;
   onPause?: (id: number) => void;
   onResume?: (id: number) => void;
+  onRetry?: (id: number) => void;
 }
 
 function getStatusConfig(status: Download["status"]) {
@@ -58,7 +59,7 @@ function PlatformIcon({ videoType }: { videoType: string }) {
   }
 }
 
-export function ActiveDownloadCard({ download, onDelete, onPause, onResume }: ActiveDownloadCardProps) {
+export function ActiveDownloadCard({ download, onDelete, onPause, onResume, onRetry }: ActiveDownloadCardProps) {
   const [imgError, setImgError] = useState(false);
   const [backendThumbnail, setBackendThumbnail] = useState<string | null>(null);
   const statusConfig = getStatusConfig(download.status);
@@ -163,6 +164,13 @@ export function ActiveDownloadCard({ download, onDelete, onPause, onResume }: Ac
               <ExternalLink className="size-3" />
               Open
             </a>
+          )}
+
+          {download.status === "failed" && onRetry && (
+            <Button variant="ghost" size="sm" onClick={() => onRetry(download.id)} className="gap-1.5">
+              <RefreshCw className="size-3" />
+              Retry
+            </Button>
           )}
 
           {isPaused && onResume && (

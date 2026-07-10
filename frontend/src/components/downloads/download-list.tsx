@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 import {
-  Inbox, Loader2, ExternalLink, Trash2,
+  Inbox, Loader2, ExternalLink, Trash2, RefreshCw,
   Pause, Play, Youtube, Music, Camera,
   MessageCircle, Globe, CheckCircle2, XCircle,
   Clock, ArrowUpDown, Copy
@@ -23,6 +23,8 @@ interface DownloadListProps {
   onDelete: (id: number) => void;
   onPause?: (id: number) => void;
   onResume?: (id: number) => void;
+  onRetry?: (id: number) => void;
+  onClearFailed?: () => void;
 }
 
 const thumbnailCache = new Map<number, string | null>();
@@ -124,7 +126,7 @@ function SortArrow({ active, dir }: { active: boolean; dir: SortDir }) {
   );
 }
 
-export function DownloadList({ downloads, loading, onDelete, onPause, onResume }: DownloadListProps) {
+export function DownloadList({ downloads, loading, onDelete, onPause, onResume, onRetry, onClearFailed }: DownloadListProps) {
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sortField, setSortField] = useState<SortField>("date");
@@ -226,6 +228,15 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume }
             </span>
           </button>
         ))}
+        {statusCounts.failed > 0 && onClearFailed && (
+          <button
+            onClick={onClearFailed}
+            className="ml-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-sm text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+          >
+            <Trash2 className="size-3" />
+            Clear failed
+          </button>
+        )}
         <div className="ml-auto text-[11px] text-mute hidden sm:block">
           {filtered.length} result{filtered.length !== 1 ? "s" : ""}
         </div>
@@ -347,6 +358,15 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume }
                             >
                               <Copy className="size-3.5" />
                             </button>
+                            {d.status === "failed" && onRetry && (
+                              <button
+                                onClick={() => onRetry(d.id)}
+                                className="inline-flex items-center justify-center size-7 rounded-sm hover:bg-surface-soft transition-colors text-mute hover:text-ink"
+                                title="Retry"
+                              >
+                                <RefreshCw className="size-3.5" />
+                              </button>
+                            )}
                             {paused && onResume && (
                               <button
                                 onClick={() => onResume(d.id)}
@@ -462,6 +482,15 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume }
                       <Copy className="size-3" />
                       Copy
                     </button>
+                    {d.status === "failed" && onRetry && (
+                      <button
+                        onClick={() => onRetry(d.id)}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:text-primary transition-colors px-2 py-1 rounded-md hover:bg-accent"
+                      >
+                        <RefreshCw className="size-3" />
+                        Retry
+                      </button>
+                    )}
                     {paused && onResume && (
                       <button
                         onClick={() => onResume(d.id)}
