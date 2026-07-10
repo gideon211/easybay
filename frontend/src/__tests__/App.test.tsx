@@ -26,26 +26,29 @@ vi.mock("@/hooks/use-torrents", () => ({
   }),
 }));
 
+vi.mock("@/components/dashboard/system-status", () => ({
+  SystemStatus: () => null,
+}));
+
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("renders the heading", () => {
+  it("renders the dashboard heading", () => {
     render(<App />);
-    const heading = screen.getByRole("heading", { level: 1 });
-    expect(heading).toBeDefined();
-    expect(heading.textContent).toBe("EasyBay");
+    expect(screen.getByRole("heading", { level: 1 })).toBeDefined();
   });
 
-  it("renders tab buttons", () => {
+  it("renders sidebar navigation items", () => {
     render(<App />);
-    expect(screen.getByText("Social Downloads")).toBeDefined();
+    expect(screen.getByText("Downloads")).toBeDefined();
     expect(screen.getByText("Torrents")).toBeDefined();
+    expect(screen.getByText("Image Tools")).toBeDefined();
   });
 
-  it("shows download form by default", () => {
+  it("shows dashboard by default", () => {
     render(<App />);
-    expect(screen.getByText("Social Downloads")).toBeDefined();
+    expect(screen.getAllByText("Dashboard").length).toBeGreaterThanOrEqual(1);
   });
 });

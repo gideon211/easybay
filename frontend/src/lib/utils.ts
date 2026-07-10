@@ -83,3 +83,13 @@ export function isAudioFile(filename: string | null): boolean {
   const ext = getFileExtension(filename);
   return ["mp3", "m4a", "wav", "aac", "flac", "ogg", "wma"].includes(ext);
 }
+
+/**
+ * Converts a raw format ID to a human-readable label.
+ */
+export function formatQuality(quality: string): string {
+  if (quality.startsWith("dash-")) return "DASH";
+  if (/^\d+$/.test(quality)) return `${quality}p`;
+  if (quality.startsWith("sb-")) return "Storyboard";
+  return quality;
+}

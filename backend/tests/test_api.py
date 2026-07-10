@@ -32,8 +32,9 @@ def test_submit_download_invalid_url():
 
 
 def test_submit_download_invalid_quality():
+    # Raw format IDs are now accepted - passed through to yt-dlp
     response = client.post("/api/download", json={"url": "https://youtube.com/watch?v=123", "quality": "invalid"})
-    assert response.status_code == 400
+    assert response.status_code == 200
 
 
 def test_list_downloads_empty():

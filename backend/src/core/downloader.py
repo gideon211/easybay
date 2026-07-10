@@ -1,3 +1,4 @@
+import logging
 import threading
 import time
 from collections.abc import Callable
@@ -10,6 +11,8 @@ from .config import get_config
 from .detector import detect_video_type
 from .models import DownloadResult, DownloadStatus, ProgressInfo
 from .quality import resolve_format_string
+
+logger = logging.getLogger(__name__)
 
 
 class DownloadError(Exception):
@@ -59,11 +62,18 @@ class Downloader:
         secs = seconds % 60
         return f"{minutes}:{secs:02d}"
 
-    def _generate_filename(self, title: str, ext: str) -> str:
+    def _generate_filename(self, title: str, ext: str, video_type=None) -> str:
+        auto_prefixes = ("video by ", "photo by ", "image by ", "reel by ", "post by ")
+        if title.lower().startswith(auto_prefixes):
+            parts = title.split(" by ", 1)
+            username = parts[1].strip() if len(parts) > 1 else "download"
+            safe_username = "".join(c for c in username if c.isalnum() or c in (' ', '-', '_')).strip()
+            safe_username = safe_username[:50]
+            platform = video_type.value if video_type else "download"
+            return f"{safe_username}_{platform}.{ext}"
         safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
         safe_title = safe_title[:100]
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return f"{safe_title}_{timestamp}.{ext}"
+        return f"{safe_title}.{ext}"
 
     def _download_with_retry(self, url: str, quality: str, output_dir: Path) -> DownloadResult:
         video_type = detect_video_type(url)
@@ -96,11 +106,20 @@ class Downloader:
                         title = info.get('title', 'download')
                         ext = info.get('ext', 'mp4')
 
-                        temp_name = f"{info['id']}.{ext}"
-                        temp_path = output_dir / temp_name
+                        video_id = info['id']
+                        candidates = sorted(output_dir.glob(f"{video_id}.*"))
+                        candidates = [p for p in candidates if p.suffix not in ('.part', '.ytdl')]
+                        temp_path = candidates[0] if candidates else output_dir / f"{video_id}.{ext}"
 
-                        filename = self._generate_filename(title, ext)
+                        filename = self._generate_filename(title, ext, video_type)
                         filepath = output_dir / filename
+
+                        counter = 1
+                        stem = Path(filename).stem
+                        while filepath.exists() and filepath != temp_path:
+                            filename = f"{stem}_{counter}.{ext}"
+                            filepath = output_dir / filename
+                            counter += 1
 
                         if temp_path.exists() and temp_path != filepath:
                             temp_path.rename(filepath)
@@ -140,7 +159,8 @@ class Downloader:
                 if info:
                     title = info.get("title", "download")
                     ext = info.get("ext", "mp4")
-                    display_name = self._generate_filename(title, ext)
+                    video_type = detect_video_type(url)
+                    display_name = self._generate_filename(title, ext, video_type)
         except Exception:
             logger.debug("Failed to extract info for progress display")
 

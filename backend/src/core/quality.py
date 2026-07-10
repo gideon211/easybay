@@ -22,7 +22,9 @@ def resolve_format_string(quality: str | Quality) -> str:
     for q in Quality:
         if q.value == key:
             return QUALITY_FORMATS[q]
-    return quality
+    if "+" not in key:
+        return f"{key}+bestaudio[ext=m4a]/best"
+    return key
 
 
 get_format_string = resolve_format_string

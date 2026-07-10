@@ -31,8 +31,8 @@ export function useTorrents() {
   }, [fetchTorrents]);
 
   const addNewTorrent = useCallback(
-    async (data: TorrentAddRequest) => {
-      const torrent = await addTorrent(data);
+    async (data: TorrentAddRequest, file?: File) => {
+      const torrent = await addTorrent(data, file);
       setTorrents((prev) => [torrent, ...prev]);
       return torrent;
     },

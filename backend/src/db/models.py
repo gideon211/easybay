@@ -33,6 +33,7 @@ class Download(Base):
     speed = Column(String, nullable=True)
     eta = Column(String, nullable=True)
     error_message = Column(String, nullable=True)
+    file_size = Column(Integer, nullable=True)
     remove_watermark = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
@@ -49,10 +50,22 @@ class Download(Base):
             "speed": self.speed,
             "eta": self.eta,
             "error_message": self.error_message,
+            "file_size": self.file_size,
             "remove_watermark": self.remove_watermark,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
         }
+
+
+class Setting(Base):
+    __tablename__ = "settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {self.key: self.value}
 
 
 class Torrent(Base):
@@ -103,12 +116,37 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _seed_default_settings()
+
+
+def _seed_default_settings():
+    try:
+        db = SessionLocal()
+        try:
+            existing = db.query(Setting).count()
+            if existing == 0:
+                from ..core.config import get_config
+                cfg = get_config()
+                for key, value in cfg.to_dict().items():
+                    db.add(Setting(key=key, value=str(value)))
+                db.commit()
+        finally:
+            db.close()
+    except Exception:
+        pass
     try:
         with engine.connect() as conn:
             conn.execute(text("ALTER TABLE downloads ADD COLUMN remove_watermark BOOLEAN DEFAULT 0"))
             conn.commit()
     except Exception:
         logger.debug("Migration ALTER TABLE remove_watermark skipped (likely already exists)")
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE downloads ADD COLUMN file_size INTEGER"))
+            conn.commit()
+    except Exception:
+        logger.debug("Migration ALTER TABLE file_size skipped (likely already exists)")
 
 
 def get_db():

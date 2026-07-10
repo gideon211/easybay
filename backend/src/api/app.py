@@ -1,28 +1,35 @@
 import asyncio
 import hashlib
+import io
 import json
 import logging
 import re
 import threading
 import urllib.parse
 import urllib.request
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
 import yt_dlp
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastbencode import bencode
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..core.config import get_config
 from ..core.detector import detect_video_type, is_valid_url
 from ..core.downloader import Downloader
-from ..core.quality import parse_quality
-from ..db.models import Download, SessionLocal, Torrent, get_db, init_db
+from ..db.models import Download, SessionLocal, Torrent, Setting, get_db, init_db
+from ..image_tools.background import BackgroundRemover
+from ..image_tools.svg import SvgConverter
+from ..image_tools.passport import PassportConverter, NoFaceDetectedError
+from ..image_tools.passport_sizes import COUNTRY_SPECS
+from PIL import Image
 from ..torrent.manager import get_manager as get_torrent_manager
 from ..watermark.remover import WatermarkRemover
 
@@ -74,6 +81,7 @@ class DownloadResponse(BaseModel):
     progress: float
     speed: str | None
     eta: str | None
+    file_size: int | None
     error_message: str | None
     remove_watermark: bool = False
     created_at: str | None
@@ -230,6 +238,9 @@ def run_download(download_id: int, url: str, quality: str):
             download.progress = 1.0
             download.filename = result.filename
             download.completed_at = datetime.utcnow()
+            filepath = config.download_dir / result.filename
+            if filepath.exists():
+                download.file_size = filepath.stat().st_size
 
             if download.remove_watermark and WatermarkRemover.has_watermark(download.video_type):
                 filepath = config.download_dir / result.filename
@@ -278,13 +289,6 @@ def run_download(download_id: int, url: str, quality: str):
 def submit_download(request: DownloadRequest, db: Session = Depends(get_db)):
     if not is_valid_url(request.url):
         raise HTTPException(status_code=400, detail="Invalid URL format")
-
-    try:
-        parse_quality(request.quality)
-    except ValueError:
-        raise HTTPException(
-            status_code=400, detail=f"Invalid quality: {request.quality}"
-        ) from None
 
     video_type = detect_video_type(request.url)
     quality = request.quality
@@ -415,6 +419,7 @@ def get_download_file(download_id: int, db: Session = Depends(get_db)):
         path=str(filepath),
         filename=download.filename,
         media_type=media_types.get(ext, "application/octet-stream"),
+        content_disposition_type="inline",
         headers={
             "Accept-Ranges": "bytes",
         },
@@ -476,25 +481,70 @@ class TorrentResponse(BaseModel):
 
 
 @app.post("/api/torrents", response_model=TorrentResponse)
-async def add_torrent(request: TorrentAddRequest, db: Session = Depends(get_db)):
+async def add_torrent(
+    source: str = "",
+    name: str = "",
+    info_hash: str = "",
+    file: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+):
     tm = get_torrent_manager()
+    torrent_file_path: Path | None = None
 
-    info_hash = request.info_hash
-    if tm.is_magnet(request.source):
+    # Handle .torrent file upload
+    if file and file.filename and file.filename.lower().endswith(".torrent"):
+        content = await file.read()
+        torrent_file_path = config.torrent_dir / file.filename
+        torrent_file_path.parent.mkdir(parents=True, exist_ok=True)
+        torrent_file_path.write_bytes(content)
+
+        # Parse info hash from the .torrent file
+        try:
+            from fastbencode import bdecode
+            decoded = bdecode(content)
+            info_dict = decoded.get(b"info", {})
+            import hashlib as hl
+            info_hash = hl.sha1(bencode(info_dict)).hexdigest()
+        except Exception:
+            # Fallback: hash the filename
+            info_hash = hashlib.sha256(file.filename.encode()).hexdigest()[:40]
+
+        if not source:
+            source = file.filename
+        if not name:
+            name = file.filename.rsplit(".", 1)[0]
+
+    elif source and not tm.is_magnet(source) and Path(source).is_file():
+        # Source is a local .torrent file path
+        torrent_file_path = Path(source)
+        try:
+            import hashlib as hl
+
+            from fastbencode import bdecode
+            content = torrent_file_path.read_bytes()
+            decoded = bdecode(content)
+            info_dict = decoded.get(b"info", {})
+            info_hash = hl.sha1(bencode(info_dict)).hexdigest()
+        except Exception:
+            info_hash = hashlib.sha256(source.encode()).hexdigest()[:40]
+        if not name:
+            name = torrent_file_path.stem
+
+    elif tm.is_magnet(source):
         try:
             from ..torrent.magnet import parse_magnet
-            ih_bytes, name, _ = parse_magnet(request.source)
+            ih_bytes, magnet_name, _ = parse_magnet(source)
             info_hash = ih_bytes.hex()
-            if not request.name:
-                request.name = name
+            if not name:
+                name = magnet_name
         except Exception:
-            info_hash = info_hash if info_hash else hashlib.sha256(request.source.encode()).hexdigest()[:20]
+            info_hash = info_hash if info_hash else hashlib.sha256(source.encode()).hexdigest()[:20]
     elif not info_hash:
-        info_hash = hashlib.sha256(request.source.encode()).hexdigest()[:20]
+        info_hash = hashlib.sha256(source.encode()).hexdigest()[:20]
 
     torrent = Torrent(
-        magnet=request.source,
-        name=request.name or "unknown",
+        magnet=source,
+        name=name or "unknown",
         info_hash=info_hash,
         status="queued",
         progress=0.0,
@@ -531,9 +581,10 @@ async def add_torrent(request: TorrentAddRequest, db: Session = Depends(get_db))
 
     torrent_id_str = str(torrent.id)
     await tm.start_download(
-        source=request.source,
+        source=source,
         info_hash=info_hash,
-        name=request.name,
+        name=name,
+        torrent_path=torrent_file_path,
         notify=on_progress,
     )
 
@@ -605,6 +656,7 @@ def get_torrent_file(torrent_id: int, db: Session = Depends(get_db)):
         path=str(path),
         filename=path.name,
         media_type=media_types.get(ext, "application/octet-stream"),
+        content_disposition_type="inline",
         headers={"Accept-Ranges": "bytes"},
     )
 
@@ -664,6 +716,291 @@ async def websocket_progress(websocket: WebSocket, download_id: int):
                 del progress_connections[download_id]
 
 
+ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp"}
+
+
+def _save_upload(file: UploadFile) -> Path:
+    ext = Path(file.filename or "upload.png").suffix or ".png"
+    stem = uuid.uuid4().hex
+    dest = config.uploads_dir / f"{stem}{ext}"
+    content = file.file.read()
+    dest.write_bytes(content)
+    return dest
+
+
+# ── Background Removal (async with WebSocket progress) ──
+
+bg_tasks: dict[str, dict] = {}
+bg_results: dict[str, bytes] = {}
+
+
+def _run_remove_bg(task_id: str, input_bytes: bytes, output_format: str):
+    try:
+        remover = BackgroundRemover()
+
+        def on_progress(phase: str, progress: int, label: str):
+            bg_tasks[task_id] = {
+                "phase": phase, "progress": progress,
+                "label": label, "status": "processing",
+            }
+
+        result = remover.remove(input_bytes, output_format=output_format, progress_callback=on_progress)
+        bg_results[task_id] = result
+        bg_tasks[task_id] = {"phase": "done", "progress": 100, "label": "Complete", "status": "complete"}
+    except Exception as e:
+        logger.exception("Background removal failed for task %s", task_id)
+        bg_tasks[task_id] = {"phase": "error", "progress": 0, "label": str(e), "status": "error", "error": str(e)}
+
+
+@app.post("/api/remove-bg/start")
+async def start_remove_bg(file: UploadFile = File(...), output_format: str = "PNG"):
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported image type: {file.content_type}")
+
+    # Clean up previous results
+    bg_tasks.clear()
+    bg_results.clear()
+
+    input_bytes = await file.read()
+    task_id = uuid.uuid4().hex
+    bg_tasks[task_id] = {"phase": "queued", "progress": 0, "label": "Starting...", "status": "processing"}
+
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _run_remove_bg, task_id, input_bytes, output_format)
+
+    return {"task_id": task_id}
+
+
+@app.websocket("/ws/remove-bg/{task_id}")
+async def websocket_remove_bg(websocket: WebSocket, task_id: str):
+    await websocket.accept()
+    last_progress = -1
+    ticks = 0
+
+    try:
+        while True:
+            ticks += 1
+
+            if task_id in bg_tasks:
+                t = bg_tasks[task_id]
+
+                if t["status"] == "complete":
+                    await websocket.send_json({"type": "complete", "progress": 100, "phase": "done", "label": "Complete"})
+                    await websocket.close(code=1000)
+                    return
+
+                if t["status"] == "error":
+                    await websocket.send_json({"type": "error", "error": t.get("error", "Processing failed")})
+                    await websocket.close(code=1000)
+                    return
+
+                # Send progress only when it changes
+                if t["progress"] != last_progress:
+                    last_progress = t["progress"]
+                    try:
+                        await websocket.send_json({
+                            "type": "progress", "phase": t["phase"],
+                            "progress": t["progress"], "label": t["label"],
+                        })
+                    except WebSocketDisconnect:
+                        return
+
+            # Heartbeat every ~20 ticks (10s)
+            if ticks % 20 == 0:
+                try:
+                    await websocket.send_json({"type": "ping"})
+                except WebSocketDisconnect:
+                    return
+
+            await asyncio.sleep(0.5)
+    except WebSocketDisconnect:
+        logger.warning("WebSocket disconnected for task %s", task_id)
+    except Exception:
+        logger.exception("Unexpected error in WS handler for task %s", task_id)
+
+
+@app.get("/api/remove-bg/result/{task_id}")
+def get_remove_bg_result(task_id: str, format: str = "png"):
+    result = bg_results.get(task_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    fmt = format.lower()
+    if fmt == "webp":
+        img = Image.open(io.BytesIO(result))
+        buf = io.BytesIO()
+        img.save(buf, format="WEBP", quality=95)
+        return Response(content=buf.getvalue(), media_type="image/webp", headers={
+            "Content-Disposition": 'attachment; filename="nobg.webp"',
+        })
+    elif fmt == "svg":
+        svg_str = SvgConverter().convert(result, img_format="png")
+        return Response(content=svg_str, media_type="image/svg+xml", headers={
+            "Content-Disposition": 'attachment; filename="nobg.svg"',
+        })
+
+    return Response(content=result, media_type="image/png", headers={
+        "Content-Disposition": 'attachment; filename="nobg.png"',
+    })
+
+
+@app.post("/api/remove-bg/download/{download_id}")
+def remove_bg_from_download(download_id: int, db: Session = Depends(get_db)):
+    download = db.query(Download).filter(Download.id == download_id).first()
+    if not download:
+        raise HTTPException(status_code=404, detail="Download not found")
+    if not download.filename:
+        raise HTTPException(status_code=400, detail="Download has no file")
+
+    input_path = config.download_dir / download.filename
+    if not input_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    try:
+        remover = BackgroundRemover()
+        output = remover.remove(input_path.read_bytes())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Background removal failed: {e}") from e
+
+    filename = f"{Path(download.filename).stem}_nobg.png"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return Response(content=output, media_type="image/png", headers=headers)
+
+
+@app.post("/api/to-svg")
+async def convert_to_svg(
+    file: UploadFile = File(...),
+):
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported image type: {file.content_type}")
+    input_bytes = await file.read()
+    ext = Path(file.filename or "image.png").suffix.lstrip(".").lower() or "png"
+    try:
+        converter = SvgConverter()
+        svg = converter.convert(input_bytes, img_format=ext)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SVG conversion failed: {e}") from e
+
+    stem = Path(file.filename or "image").stem
+    headers = {"Content-Disposition": f'attachment; filename="{stem}.svg"'}
+    return Response(content=svg, media_type="image/svg+xml", headers=headers)
+
+
+@app.post("/api/to-svg/download/{download_id}")
+def convert_download_to_svg(
+    download_id: int,
+    db: Session = Depends(get_db),
+):
+    download = db.query(Download).filter(Download.id == download_id).first()
+    if not download:
+        raise HTTPException(status_code=404, detail="Download not found")
+    if not download.filename:
+        raise HTTPException(status_code=400, detail="Download has no file")
+
+    input_path = config.download_dir / download.filename
+    if not input_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    ext = input_path.suffix.lstrip(".").lower() or "png"
+    try:
+        converter = SvgConverter()
+        svg = converter.convert(input_path.read_bytes(), img_format=ext)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SVG conversion failed: {e}") from e
+
+    stem = Path(download.filename).stem
+    headers = {"Content-Disposition": f'attachment; filename="{stem}.svg"'}
+    return Response(content=svg, media_type="image/svg+xml", headers=headers)
+
+
+@app.get("/api/settings")
+def get_settings():
+    return get_config().to_dict()
+
+
+class SettingsUpdate(BaseModel):
+    key: str
+    value: str
+
+
+@app.put("/api/settings")
+def update_settings(updates: list[SettingsUpdate]):
+    cfg = get_config()
+    for u in updates:
+        cfg.update(u.key, u.value)
+    return cfg.to_dict()
+
+
+@app.get("/api/passport/sizes")
+def list_passport_sizes():
+    return [
+        {
+            "country": s.country,
+            "code": s.code,
+            "region": s.region,
+            "width_mm": s.width_mm,
+            "height_mm": s.height_mm,
+            "width_px": s.width_px,
+            "height_px": s.height_px,
+            "dpi": s.dpi,
+            "bg_color": s.bg_color,
+            "bg_color_name": s.bg_color_name,
+            "emoji": s.emoji,
+            "notes": s.notes,
+        }
+        for s in COUNTRY_SPECS
+    ]
+
+
+@app.post("/api/passport/convert")
+async def convert_passport(
+    file: UploadFile = File(...),
+    country_code: str = "US",
+    bg_color: str = "#ffffff",
+):
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported image type: {file.content_type}")
+
+    input_bytes = await file.read()
+    converter = PassportConverter()
+
+    try:
+        result_bytes = await asyncio.get_running_loop().run_in_executor(
+            None,
+            converter.convert,
+            input_bytes,
+            country_code,
+            bg_color,
+            None,
+        )
+    except NoFaceDetectedError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Passport conversion failed")
+        raise HTTPException(status_code=500, detail=f"Conversion failed: {e}")
+
+    return Response(content=result_bytes, media_type="image/png", headers={
+        "Content-Disposition": 'attachment; filename="passport.png"',
+    })
+
+
 @app.get("/api/health")
 def health_check():
     return {"status": "ok", "version": "0.1.0"}
+
+
+@app.get("/api/system-stats")
+def get_system_stats():
+    import psutil
+    cpu = psutil.cpu_percent(interval=0.5)
+    mem = psutil.virtual_memory()
+    disk = psutil.disk_usage("/")
+    return {
+        "cpu_percent": cpu,
+        "ram_percent": mem.percent,
+        "ram_used_gb": round(mem.used / (1024**3), 1),
+        "ram_total_gb": round(mem.total / (1024**3), 1),
+        "disk_percent": disk.percent,
+        "disk_used_gb": round(disk.used / (1024**3), 1),
+        "disk_total_gb": round(disk.total / (1024**3), 1),
+    }

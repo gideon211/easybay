@@ -2,7 +2,7 @@ import { useEffect, useCallback } from "react";
 import { X, Download as DownloadIcon, ExternalLink, Film, Music } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { cn, isVideoFile, isAudioFile } from "@/lib/utils";
+import { cn, formatQuality, isVideoFile, isAudioFile } from "@/lib/utils";
 import { getDownloadFileUrl } from "@/lib/api";
 import type { Download } from "@/lib/api";
 
@@ -38,12 +38,12 @@ export function MediaPreview({ download, onClose }: MediaPreviewProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-4"
       onClick={handleBackdropClick}
     >
-      <div className="bg-card border border-border/50 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90dvh] overflow-hidden flex flex-col">
+      <div className="bg-card border border-hairline w-full max-w-3xl max-h-[90dvh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border/50">
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-hairline">
           <div className="flex-1 min-w-0">
             <h2 className="font-semibold text-base truncate">
               {download.filename || download.url}
@@ -54,14 +54,14 @@ export function MediaPreview({ download, onClose }: MediaPreviewProps) {
               </Badge>
               {download.quality && (
                 <Badge variant="outline" className="text-[10px] px-2 py-0">
-                  {download.quality}
+                  {formatQuality(download.quality)}
                 </Badge>
               )}
             </div>
           </div>
           <button
             onClick={onClose}
-            className="size-8 flex items-center justify-center rounded-full hover:bg-accent transition-colors"
+            className="size-8 flex items-center justify-center rounded-sm hover:bg-surface-soft transition-colors"
           >
             <X className="size-4" />
           </button>
@@ -75,7 +75,7 @@ export function MediaPreview({ download, onClose }: MediaPreviewProps) {
                 <video
                   src={fileUrl}
                   controls
-                  className="w-full rounded-xl bg-black"
+                  className="w-full rounded-sm bg-ink"
                   style={{ maxHeight: "60dvh" }}
                 >
                   Your browser does not support video playback.
@@ -83,10 +83,10 @@ export function MediaPreview({ download, onClose }: MediaPreviewProps) {
               )}
               {isAudio && (
                 <div className="flex flex-col items-center justify-center py-12 gap-4">
-                  <div className="size-20 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Music className="size-10 text-primary" />
+                  <div className="size-20 rounded-sm bg-ink/10 flex items-center justify-center">
+                    <Music className="size-10 text-ink" />
                   </div>
-                  <p className="text-sm text-muted-foreground text-center max-w-xs">
+                  <p className="text-sm text-mute text-center max-w-xs">
                     {download.filename}
                   </p>
                   <audio
@@ -100,17 +100,17 @@ export function MediaPreview({ download, onClose }: MediaPreviewProps) {
               )}
               {!isVideo && !isAudio && (
                 <div className="flex flex-col items-center justify-center py-16 gap-4">
-                  <div className="size-16 rounded-full bg-muted flex items-center justify-center">
-                    <Film className="size-8 text-muted-foreground" />
+                  <div className="size-16 rounded-sm bg-surface-card flex items-center justify-center">
+                    <Film className="size-8 text-mute" />
                   </div>
-                  <p className="text-sm text-muted-foreground text-center">
+                  <p className="text-sm text-mute text-center">
                     Preview not available for this file type.
                   </p>
                 </div>
               )}
             </>
           ) : (
-            <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
+            <div className="flex flex-col items-center justify-center py-16 gap-3 text-mute">
               <p className="text-sm font-medium">File not available</p>
               <p className="text-xs">
                 {download.status === "failed"
@@ -123,7 +123,7 @@ export function MediaPreview({ download, onClose }: MediaPreviewProps) {
 
         {/* Footer actions */}
         {download.status === "completed" && download.filename && (
-          <div className="flex items-center justify-end gap-2 px-5 pb-4 pt-2 border-t border-border/50">
+          <div className="flex items-center justify-end gap-2 px-5 pb-4 pt-2 border-t border-hairline">
             <a
               href={fileUrl}
               target="_blank"

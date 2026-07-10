@@ -11,6 +11,28 @@ from .magnet import parse_magnet, resolve_magnet
 logger = logging.getLogger(__name__)
 
 
+def _patch_aiotorrent_trackers():
+    """Monkey-patch aiotorrent's UDPTracker.parse_announce to handle short responses."""
+    try:
+        from aiotorrent.core.trackers import UDPTracker
+
+        original_parse_announce = UDPTracker.parse_announce
+
+        def _safe_parse_announce(self, response: bytes):
+            if len(response) < 20:
+                logger.warning(f"Tracker returned short response ({len(response)} bytes), skipping")
+                return {"action": 0, "transaction_id": 0, "interval": 0, "leechers": 0, "seeders": 0, "peers": []}
+            return original_parse_announce(self, response)
+
+        UDPTracker.parse_announce = _safe_parse_announce
+        logger.info("Patched aiotorrent UDPTracker.parse_announce for short-response safety")
+    except Exception as e:
+        logger.warning(f"Failed to patch aiotorrent trackers: {e}")
+
+
+_patch_aiotorrent_trackers()
+
+
 class TorrentManager:
     def __init__(self):
         self.config = get_config()
@@ -53,6 +75,7 @@ class TorrentManager:
         source: str,
         info_hash: str = "",
         name: str = "",
+        torrent_path: Path | None = None,
         notify: Callable[[dict[str, Any]], None] | None = None,
     ) -> str:
         from aiotorrent import DownloadStrategy, Torrent
@@ -88,16 +111,19 @@ class TorrentManager:
 
         async def _run():
             try:
-                torrent_path: Path | None = None
                 if self.is_magnet(source):
                     state["status"] = "resolving"
                     self._emit(info_hash)
+                    logger.info(f"[{info_hash[:8]}] Resolving magnet URI...")
                     torrent_path = await self.resolve_magnet_uri(source)
                     state["name"] = torrent_path.stem
+                    logger.info(f"[{info_hash[:8]}] Resolved to {torrent_path}")
 
                 if torrent_path:
+                    logger.info(f"[{info_hash[:8]}] Initializing torrent from {torrent_path}")
                     torrent = Torrent(str(torrent_path))
                     await torrent.init(dht_enabled=True)
+                    logger.info(f"[{info_hash[:8]}] Torrent initialized, starting download")
 
                     state["status"] = "downloading"
                     state["total_size"] = torrent.torrent_info.get("size", 0) or 0
@@ -140,12 +166,13 @@ class TorrentManager:
                         state["progress"] = 1.0
                         state["output_path"] = str(save_dir)
                         self._emit(info_hash)
+                        logger.info(f"[{info_hash[:8]}] Download completed")
 
             except Exception as e:
                 state["status"] = "error"
                 state["error_message"] = str(e)
                 self._emit(info_hash)
-                logger.error(f"Torrent download failed: {e}")
+                logger.error(f"[{info_hash[:8]}] Torrent download failed: {e}", exc_info=True)
 
         task = asyncio.create_task(_run())
         self._active[info_hash]["_task"] = task
