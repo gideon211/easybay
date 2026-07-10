@@ -38,6 +38,7 @@ export function Dashboard({
   onDeleteDownload,
   onPauseDownload,
   onResumeDownload,
+  onRetryDownload,
   isSubmitting,
   onNavigate,
 }: DashboardProps) {
