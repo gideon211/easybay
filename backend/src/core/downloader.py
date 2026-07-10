@@ -89,6 +89,10 @@ class Downloader:
             'no_warnings': True,
         }
 
+        cookies_file = self.config.download_dir.parent / "cookies.txt"
+        if cookies_file.exists():
+            ydl_opts['cookiefile'] = str(cookies_file)
+
         if self.config.download_speed_limit > 0:
             ydl_opts['ratelimit'] = self.config.download_speed_limit * 1024  # KB/s to B/s
 

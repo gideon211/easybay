@@ -138,6 +138,9 @@ def list_formats(request: FormatRequest):
             "ignoreerrors": True,
             "noplaylist": True,
         }
+        cookies_file = get_config().download_dir.parent / "cookies.txt"
+        if cookies_file.exists():
+            ydl_opts["cookiefile"] = str(cookies_file)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(request.url, download=False)
             raw_formats = info.get("formats", []) if info else []
@@ -1121,6 +1124,28 @@ def delete_file(filename: str):
         raise HTTPException(status_code=404, detail="File not found")
     filepath.unlink()
     return {"message": "File deleted"}
+
+
+@app.post("/api/cookies")
+def upload_cookies(file: UploadFile = File(...)):
+    dest = config.download_dir.parent / "cookies.txt"
+    content = file.file.read()
+    dest.write_bytes(content)
+    return {"message": "Cookies uploaded", "size": len(content)}
+
+
+@app.get("/api/cookies")
+def get_cookies_status():
+    dest = config.download_dir.parent / "cookies.txt"
+    return {"exists": dest.exists(), "size": dest.stat().st_size if dest.exists() else 0}
+
+
+@app.delete("/api/cookies")
+def delete_cookies():
+    dest = config.download_dir.parent / "cookies.txt"
+    if dest.exists():
+        dest.unlink()
+    return {"message": "Cookies deleted"}
 
 
 @app.get("/api/health")

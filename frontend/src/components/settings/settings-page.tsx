@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Download,
   Magnet,
   HardDrive,
   Palette,
-  Info,
+  Info, Cookie,
   Check,
   XCircle,
   Loader2,
@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 import { useSettings } from "@/hooks/use-settings";
 import { getSystemStats, type SystemStats } from "@/lib/api";
 
@@ -78,6 +79,50 @@ const sliderClass =
 
 export function SettingsPage() {
   const { settings, loading, saving, error, update, reload } = useSettings();
+  const [cookieStatus, setCookieStatus] = useState<{ exists: boolean; size: number } | null>(null);
+  const [uploadingCookie, setUploadingCookie] = useState(false);
+  const uploadRef = useRef<HTMLInputElement>(null);
+
+  const fetchCookieStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/cookies");
+      if (res.ok) setCookieStatus(await res.json());
+    } catch {}
+  }, []);
+
+  useEffect(() => { fetchCookieStatus(); }, [fetchCookieStatus]);
+
+  const handleCookieUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingCookie(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/cookies", { method: "POST", body: form });
+      if (res.ok) {
+        toast.success("Cookies uploaded — TikTok downloads should work now");
+        fetchCookieStatus();
+      } else {
+        toast.error("Failed to upload cookies");
+      }
+    } catch {
+      toast.error("Failed to upload cookies");
+    } finally {
+      setUploadingCookie(false);
+      if (uploadRef.current) uploadRef.current.value = "";
+    }
+  };
+
+  const handleCookieDelete = async () => {
+    try {
+      const res = await fetch("/api/cookies", { method: "DELETE" });
+      if (res.ok) {
+        toast.success("Cookies deleted");
+        setCookieStatus({ exists: false, size: 0 });
+      }
+    } catch {}
+  };
   const [sysStats, setSysStats] = useState<SystemStats | null>(null);
   const [localTheme, setLocalTheme] = useState<Theme>(getStoredTheme);
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
@@ -404,6 +449,49 @@ export function SettingsPage() {
             )}
           </Button>
         </SettingRow>
+      </Section>
+
+      {/* Cookies */}
+      <Section icon={Cookie} title="Cookies">
+        <SettingRow
+          label="TikTok cookies"
+          description="Upload cookies.txt from your browser to download TikTok videos. Export cookies while logged into TikTok."
+        >
+          <div className="flex items-center gap-2">
+            <input
+              ref={uploadRef}
+              type="file"
+              accept=".txt"
+              onChange={handleCookieUpload}
+              className="hidden"
+            />
+            {cookieStatus?.exists ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-success flex items-center gap-1">
+                  <Check className="size-3" />
+                  Loaded ({(cookieStatus.size / 1024).toFixed(1)}KB)
+                </span>
+                <Button variant="ghost" size="sm" onClick={handleCookieDelete} className="text-destructive text-xs">
+                  Remove
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => uploadRef.current?.click()}
+                disabled={uploadingCookie}
+                className="gap-1.5"
+              >
+                {uploadingCookie ? <Loader2 className="size-3 animate-spin" /> : <Cookie className="size-3" />}
+                Upload cookies.txt
+              </Button>
+            )}
+          </div>
+        </SettingRow>
+        <p className="text-[10px] text-mute mt-1">
+          Export from browser: install a cookies.txt extension (e.g. "Get cookies.txt"), log into TikTok, and export.
+        </p>
       </Section>
 
       {/* About */}
