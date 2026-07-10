@@ -104,7 +104,7 @@ export function Sidebar({ active, onNavigate }: SidebarProps) {
             </div>
             <div className="min-w-0">
               <p className="text-sm font-medium leading-tight truncate text-ink">Gideon Kwarteng</p>
-              <p className="text-[11px] text-mute">Admin</p>
+              <p className="text-[11px] text-mute">Developer</p>
             </div>
           </div>
         </div>
@@ -156,7 +156,7 @@ export function Sidebar({ active, onNavigate }: SidebarProps) {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-ink">Gideon Kwarteng</p>
-                  <p className="text-[11px] text-mute">Admin</p>
+                  <p className="text-[11px] text-mute">Developer</p>
                 </div>
               </div>
             </div>

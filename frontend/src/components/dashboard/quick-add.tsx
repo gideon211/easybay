@@ -45,6 +45,16 @@ export function QuickAdd({ onSubmit, isSubmitting }: QuickAddProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const [placeholder, setPlaceholder] = useState("Paste URL...");
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 640px)");
+    const update = () => setPlaceholder(mq.matches ? "Paste URL from YouTube, TikTok, Instagram, Twitter(X)..." : "Paste URL...");
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
   const isValidUrl = url.trim().length > 0;
   const platform = detectPlatform(url);
   const showWatermark = platform && WATERMARK_PLATFORMS.includes(platform);
@@ -128,7 +138,7 @@ export function QuickAdd({ onSubmit, isSubmitting }: QuickAddProps) {
           <div className="flex-1 relative">
             <Input
               type="url"
-              placeholder="Paste URL from YouTube, TikTok, Instagram, Twitter(X)..."
+              placeholder={placeholder}
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               className="pr-10 focus-visible:ring-0 focus-visible:ring-offset-0"

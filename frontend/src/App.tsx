@@ -9,6 +9,7 @@ import { TorrentList } from "@/components/torrents/torrent-list";
 import { ImageTools } from "@/components/image-tools/image-tools";
 import { PassportPage } from "@/components/passport/passport-page";
 import { SettingsPage } from "@/components/settings/settings-page";
+import { LandingPage } from "@/components/landing/landing-page";
 import { useDownloads } from "@/hooks/use-downloads";
 import { useTorrents } from "@/hooks/use-torrents";
 
@@ -22,6 +23,13 @@ function getPageFromURL(): Page {
 }
 
 export default function App() {
+  const [showLanding, setShowLanding] = useState(() => !localStorage.getItem("easybay_landing_seen"));
+
+  const handleContinue = useCallback(() => {
+    localStorage.setItem("easybay_landing_seen", "true");
+    setShowLanding(false);
+  }, []);
+
   const [page, setPage] = useState<Page>(getPageFromURL);
 
   const handleNavigate = useCallback((newPage: Page) => {
@@ -96,6 +104,8 @@ export default function App() {
       setIsTorrentSubmitting(false);
     }
   };
+
+  if (showLanding) return <LandingPage onContinue={handleContinue} />;
 
   return (
     <div className="h-screen flex overflow-hidden">
