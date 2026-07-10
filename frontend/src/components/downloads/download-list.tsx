@@ -409,13 +409,13 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume }
                     d.status === "failed" && "border-destructive/20"
                   )}
                 >
-                  {/* Top row: icon + filename + actions */}
+                  {/* Top row: icon + filename */}
                   <div className="flex items-start gap-2.5">
-                    <DownloadThumbnail download={d} className="size-10 mt-0.5" />
+                    <DownloadThumbnail download={d} className="size-10 mt-0.5 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <button
                         onClick={() => showPreview && setPreviewId(d.id)}
-                        className="font-medium text-sm leading-snug line-clamp-2 text-left hover:text-ink transition-colors"
+                        className="font-medium text-sm leading-snug line-clamp-2 text-left hover:text-ink transition-colors break-words"
                       >
                         {d.filename || d.url.split("/").pop() || "Unknown"}
                       </button>
@@ -423,8 +423,10 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume }
                         <span className="capitalize">{d.video_type}</span>
                         {d.quality && <span>· {formatQuality(d.quality)}</span>}
                       </div>
+                      <div className="mt-1.5">
+                        <StatusBadge status={d.status} />
+                      </div>
                     </div>
-                    <StatusBadge status={d.status} />
                   </div>
 
                   {/* Progress */}
