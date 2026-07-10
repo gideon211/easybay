@@ -24,10 +24,9 @@ function getPageFromURL(): Page {
 }
 
 export default function App() {
-  const [showLanding, setShowLanding] = useState(() => !localStorage.getItem("easybay_landing_seen"));
+  const [showLanding, setShowLanding] = useState(true);
 
   const handleContinue = useCallback(() => {
-    localStorage.setItem("easybay_landing_seen", "true");
     setShowLanding(false);
   }, []);
 
