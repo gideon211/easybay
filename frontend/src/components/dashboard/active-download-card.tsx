@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
   Download as DownloadIcon,
@@ -14,7 +15,7 @@ import {
   MessageCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn, formatBytes, formatQuality, getThumbnailUrl } from "@/lib/utils";
 import { getDownloadStreamUrl } from "@/lib/api";
