@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import Callable
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,22 @@ class BackgroundRemover:
             input_bytes,
             session=session,
             alpha_matting=True,
+            alpha_matting_foreground_threshold=245,
+            alpha_matting_background_threshold=10,
+            alpha_matting_erode_size=5,
+            post_process_mask=True,
         )
+
+        # Alpha matting can leave a nearly transparent fringe around hair and clothing. Those
+        # pixels are invisible on a checkerboard but create a gray/white halo on a real colored
+        # background. Snapping only the extreme confidence values preserves soft hair detail
+        # while removing the low-confidence residue that makes the filter look dirty.
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(result))).convert("RGBA")
+        alpha = img.getchannel("A").point(lambda value: 0 if value <= 8 else (255 if value >= 247 else value))
+        img.putalpha(alpha)
+        cleaned = io.BytesIO()
+        img.save(cleaned, format="PNG", optimize=True)
+        result = cleaned.getvalue()
 
         if progress_callback:
             progress_callback("saving", 90, "Saving result...")
@@ -49,7 +64,9 @@ class BackgroundRemover:
         if output_format.upper() == "WEBP":
             img = Image.open(io.BytesIO(result))
             buf = io.BytesIO()
-            img.save(buf, format="WEBP", quality=95)
+            # Lossless WebP keeps the cleaned alpha edge intact. A lossy alpha-adjacent RGB
+            # channel can reintroduce visible halos when the image is composited elsewhere.
+            img.save(buf, format="WEBP", lossless=True, method=6)
             result = buf.getvalue()
 
         if progress_callback:

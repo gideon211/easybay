@@ -232,7 +232,11 @@ def run_download(download_id: int, url: str, quality: str):
             pause_events[download_id].clear()
         db.commit()
 
+        last_persisted_at = 0.0
+        last_persisted_progress = -1.0
+
         def on_progress(info):
+            nonlocal last_persisted_at, last_persisted_progress
             if download_id in pause_events and pause_events[download_id].is_set():
                 raise yt_dlp.utils.DownloadError("Paused by user")
 
@@ -240,7 +244,17 @@ def run_download(download_id: int, url: str, quality: str):
             download.speed = info.speed or download.speed
             download.eta = info.eta or download.eta
             download.filename = info.filename or download.filename
-            db.commit()
+
+            # yt-dlp can report dozens of callbacks per second. Committing every callback made
+            # SQLite and disk I/O compete with the media transfer, so large downloads slowed
+            # down as they progressed. Persist at most twice per second while WebSocket clients
+            # still receive the live in-memory values below.
+            now = time.monotonic()
+            progress_delta = abs(info.progress - last_persisted_progress)
+            if now - last_persisted_at >= 0.5 or progress_delta >= 0.02:
+                db.commit()
+                last_persisted_at = now
+                last_persisted_progress = info.progress
 
             if download_id in progress_connections:
                 for queue in progress_connections[download_id]:

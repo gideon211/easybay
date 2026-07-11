@@ -116,7 +116,7 @@ export function Sidebar({ active, onNavigate }: SidebarProps) {
       {mobileOpen && (
         <>
           <div
-            className="fixed inset-0 z-40 bg-ink/40 md:hidden transition-opacity duration-200"
+            className="fixed inset-0 z-40 bg-overlay md:hidden transition-opacity duration-200"
             onClick={() => setMobileOpen(false)}
           />
           <aside className="fixed inset-y-0 left-0 z-50 w-60 bg-canvas border-r border-hairline md:hidden animate-in slide-in-from-left duration-200">

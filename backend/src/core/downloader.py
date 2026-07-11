@@ -42,15 +42,30 @@ class Downloader:
             downloaded = d.get('downloaded_bytes', 0)
             speed = d.get('speed')
             eta = d.get('eta')
+            info_dict = d.get("info_dict") or {}
 
             self._current_info.progress = downloaded / total if total > 0 else 0
             self._current_info.speed = f"{speed / 1024 / 1024:.1f}MB/s" if speed else ""
             self._current_info.eta = self._format_eta(eta) if eta else ""
             self._current_info.status = DownloadStatus.DOWNLOADING
 
+            # yt-dlp already includes the title in its first progress event. Using it here
+            # avoids a separate metadata request before every download, which was especially
+            # noticeable on large files and on sites with slow extractor responses.
+            title = info_dict.get("title")
+            if title:
+                ext = info_dict.get("ext") or "mp4"
+                self._current_info.filename = self._generate_filename(
+                    title,
+                    ext,
+                    detect_video_type(info_dict.get("webpage_url") or info_dict.get("original_url") or ""),
+                )
+
         elif d['status'] == 'finished':
-            self._current_info.progress = 1.0
-            self._current_info.status = DownloadStatus.COMPLETED
+            # A finished transfer may still need an audio/video merge. Keeping the value just
+            # below 100% prevents the UI from offering a file while FFmpeg is still writing it.
+            self._current_info.progress = 0.99
+            self._current_info.status = DownloadStatus.DOWNLOADING
 
         if self.progress_callback:
             self.progress_callback(self._current_info)
@@ -87,6 +102,15 @@ class Downloader:
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
+            # These options make interrupted multi-gigabyte transfers resume from their .part
+            # files and let DASH/HLS fragments download in parallel. Retries are handled inside
+            # yt-dlp so a transient fragment failure does not restart the entire media file.
+            'continuedl': True,
+            'retries': 10,
+            'fragment_retries': 10,
+            'file_access_retries': 3,
+            'concurrent_fragment_downloads': 4,
+            'buffersize': 1024 * 1024,
         }
 
         cookies_file = self.config.download_dir.parent / "cookies.txt"
@@ -113,9 +137,24 @@ class Downloader:
                         ext = info.get('ext', 'mp4')
 
                         video_id = info['id']
-                        candidates = sorted(output_dir.glob(f"{video_id}.*"))
-                        candidates = [p for p in candidates if p.suffix not in ('.part', '.ytdl')]
-                        temp_path = candidates[0] if candidates else output_dir / f"{video_id}.{ext}"
+                        candidates = [
+                            path
+                            for path in output_dir.glob(f"{video_id}.*")
+                            if not path.name.endswith((".part", ".ytdl", ".temp"))
+                            and ".f" not in path.stem
+                        ]
+                        # Separate video/audio formats create several files with the same ID.
+                        # Selecting alphabetically could rename a video-only fragment as the
+                        # final result. The merged output is written last, so mtime is the safest
+                        # cross-extractor signal when yt-dlp does not expose a final filepath.
+                        temp_path = max(candidates, key=lambda path: path.stat().st_mtime) if candidates else None
+                        if temp_path is None:
+                            return DownloadResult(
+                                success=False,
+                                error="Download completed but the output file was not found",
+                                video_type=video_type,
+                            )
+                        ext = temp_path.suffix.lstrip(".") or ext
 
                         filename = self._generate_filename(title, ext, video_type)
                         filepath = output_dir / filename
@@ -156,23 +195,9 @@ class Downloader:
         self.config.ensure_dirs()
         output = output_dir or self.config.download_dir
 
-        # Pre-extract title so filename is known during the entire download
-        display_name = url
-        try:
-            preview_opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
-            with yt_dlp.YoutubeDL(preview_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                if info:
-                    title = info.get("title", "download")
-                    ext = info.get("ext", "mp4")
-                    video_type = detect_video_type(url)
-                    display_name = self._generate_filename(title, ext, video_type)
-        except Exception:
-            logger.debug("Failed to extract info for progress display")
-
         self._current_info = ProgressInfo(
             status=DownloadStatus.PENDING,
-            filename=display_name,
+            filename=url,
         )
         if self.progress_callback:
             self.progress_callback(self._current_info)

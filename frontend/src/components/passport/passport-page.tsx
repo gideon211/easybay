@@ -726,7 +726,7 @@ export function PassportPage() {
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
           >
             <div
-              className="absolute inset-0 bg-ink/40"
+              className="absolute inset-0 bg-overlay backdrop-blur-[2px]"
               onClick={() => setShowCountryDropdown(false)}
             />
             <motion.div

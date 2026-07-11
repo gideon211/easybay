@@ -37,7 +37,7 @@ export function MediaPreview({ download, onClose }: MediaPreviewProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4 backdrop-blur-[2px]"
       onClick={handleBackdropClick}
     >
       <div className="bg-card border border-hairline w-full max-w-3xl max-h-[90dvh] overflow-hidden flex flex-col">

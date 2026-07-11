@@ -46,6 +46,7 @@
   --color-hairline-strong: var(--hairline-strong);
   --color-on-dark: var(--on-dark);
   --color-on-dark-mute: var(--on-dark-mute);
+  --color-overlay: var(--overlay);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -70,6 +71,7 @@
   --on-dark-mute: #9a9898;
   --hairline: rgba(15, 0, 0, 0.12);
   --hairline-strong: #646262;
+  --overlay: rgba(0, 0, 0, 0.58);
 
   --background: #fdfcfc;
   --foreground: #201d1d;
@@ -113,6 +115,7 @@
   --on-dark-mute: #646262;
   --hairline: rgba(255, 255, 255, 0.08);
   --hairline-strong: #9a9898;
+  --overlay: rgba(0, 0, 0, 0.78);
 
   --background: #1a1818;
   --foreground: #fdfcfc;

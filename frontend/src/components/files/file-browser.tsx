@@ -63,7 +63,7 @@ function PreviewModal({ file, onClose }: { file: FileEntry; onClose: () => void 
       transition={{ duration: 0.15 }}
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
     >
-      <div className="absolute inset-0 bg-ink/60" onClick={onClose} />
+      <div className="absolute inset-0 bg-overlay backdrop-blur-[2px]" onClick={onClose} />
       <motion.div
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
