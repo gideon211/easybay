@@ -15,7 +15,6 @@ const checkerStyle: React.CSSProperties = {
 export function RemoveBgForm() {
   const inputRef = useRef<HTMLInputElement>(null);
   const sliderRef = useRef<HTMLDivElement>(null);
-  const isDragging = useRef(false);
   const { state: bg, start, getResultUrl, reset } = useRemoveBg();
 
   const [file, setFile] = useState<File | null>(null);
@@ -36,20 +35,11 @@ export function RemoveBgForm() {
     img.src = preview;
   }, [preview]);
 
-  useEffect(() => {
-    const onUp = () => { isDragging.current = false; };
-    const onMove = (e: MouseEvent) => {
-      if (!isDragging.current || !sliderRef.current) return;
-      const rect = sliderRef.current.getBoundingClientRect();
-      const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-      setSliderPos((x / rect.width) * 100);
-    };
-    document.addEventListener("mouseup", onUp);
-    document.addEventListener("mousemove", onMove);
-    return () => {
-      document.removeEventListener("mouseup", onUp);
-      document.removeEventListener("mousemove", onMove);
-    };
+  const updateSliderPosition = useCallback((clientX: number) => {
+    const bounds = sliderRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const x = Math.max(0, Math.min(clientX - bounds.left, bounds.width));
+    setSliderPos((x / bounds.width) * 100);
   }, []);
 
   useEffect(() => {
@@ -145,7 +135,6 @@ export function RemoveBgForm() {
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
-            onClick={() => inputRef.current?.click()}
             className={cn(
               "relative block border-2 border-dashed transition-all duration-500 cursor-pointer overflow-hidden",
               "min-h-[360px] flex items-center justify-center",
@@ -159,7 +148,13 @@ export function RemoveBgForm() {
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+              onChange={(e) => {
+                const selected = e.target.files?.[0];
+                if (selected) handleFile(selected);
+                // Clearing the native value lets selecting the same file again fire change,
+                // which is important after Reset or after correcting a failed conversion.
+                e.currentTarget.value = "";
+              }}
             />
             <motion.div
               key="empty"
@@ -204,15 +199,41 @@ export function RemoveBgForm() {
             {(hasResult || isProcessing) && preview ? (
               <div
                 ref={sliderRef}
-                className="relative w-full h-full min-h-[420px] select-none cursor-ew-resize"
-                onMouseDown={() => { isDragging.current = true; }}
+                className={cn(
+                  "relative w-full h-[min(560px,65vh)] min-h-[420px] select-none overflow-hidden",
+                  hasResult && "cursor-ew-resize touch-none",
+                )}
+                onPointerDown={(event) => {
+                  if (!hasResult) return;
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  updateSliderPosition(event.clientX);
+                }}
+                onPointerMove={(event) => {
+                  if (!hasResult || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+                  updateSliderPosition(event.clientX);
+                }}
+                onPointerUp={(event) => {
+                  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                  }
+                }}
+                role={hasResult ? "slider" : undefined}
+                aria-label={hasResult ? "Compare original and background-removed image" : undefined}
+                aria-valuemin={hasResult ? 0 : undefined}
+                aria-valuemax={hasResult ? 100 : undefined}
+                aria-valuenow={hasResult ? Math.round(sliderPos) : undefined}
+                tabIndex={hasResult ? 0 : undefined}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowLeft") setSliderPos((position) => Math.max(0, position - 2));
+                  if (event.key === "ArrowRight") setSliderPos((position) => Math.min(100, position + 2));
+                }}
               >
                 {/* Result (base layer) */}
                 {hasResult && (
                   <img
                     src={resultUrl}
                     alt="Processed"
-                    className="w-full h-full min-h-[420px] max-h-[560px] object-contain"
+                    className="absolute inset-0 size-full object-contain p-4"
                     draggable={false}
                   />
                 )}
@@ -220,7 +241,7 @@ export function RemoveBgForm() {
                   <img
                     src={preview}
                     alt="Original"
-                    className="w-full h-full min-h-[420px] max-h-[560px] object-contain opacity-50"
+                    className="absolute inset-0 size-full object-contain p-4 opacity-50"
                     draggable={false}
                   />
                 )}
@@ -229,13 +250,13 @@ export function RemoveBgForm() {
                 {hasResult && (
                   <div
                     className="absolute inset-0 overflow-hidden"
-                    style={{ width: `${sliderPos}%` }}
+                    style={{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }}
                   >
-                    <div className="w-full h-full bg-canvas" style={checkerStyle}>
+                    <div className="absolute inset-0 bg-canvas" style={checkerStyle}>
                       <img
                         src={preview}
                         alt="Original"
-                        className="w-full h-full min-h-[420px] max-h-[560px] object-contain"
+                        className="absolute inset-0 size-full object-contain p-4"
                         draggable={false}
                       />
                     </div>
@@ -280,16 +301,35 @@ export function RemoveBgForm() {
                       className="absolute inset-0 bg-canvas/15 backdrop-blur-[1px]"
                     />
                     <motion.div
-                      className="absolute inset-x-[15%] h-px bg-gradient-to-r from-transparent via-ink/25 to-transparent"
+                      className="absolute inset-x-[8%] h-16 bg-gradient-to-b from-transparent via-info/15 to-transparent"
                       animate={{ top: ["-5%", "105%"] }}
-                      transition={{ duration: 2, repeat: Infinity, ease: [0.4, 0, 0.6, 1] }}
+                      transition={{ duration: 2.4, repeat: Infinity, ease: [0.4, 0, 0.6, 1] }}
                     />
+                    <motion.div
+                      className="absolute inset-x-[8%] h-px bg-info shadow-[0_0_18px_rgba(10,132,255,0.85)]"
+                      animate={{ top: ["-5%", "105%"] }}
+                      transition={{ duration: 2.4, repeat: Infinity, ease: [0.4, 0, 0.6, 1] }}
+                    />
+                    <div className="absolute inset-4 border border-info/20">
+                      <motion.span className="absolute left-0 top-0 h-5 w-px bg-info" animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.2, repeat: Infinity }} />
+                      <motion.span className="absolute left-0 top-0 h-px w-5 bg-info" animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.2, repeat: Infinity }} />
+                      <motion.span className="absolute bottom-0 right-0 h-5 w-px bg-info" animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.2, repeat: Infinity }} />
+                      <motion.span className="absolute bottom-0 right-0 h-px w-5 bg-info" animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.2, repeat: Infinity }} />
+                    </div>
                     <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30">
-                      <div className="flex items-center gap-2.5 px-4 py-2 rounded-sm bg-canvas/90 border border-hairline">
-                        <span className="relative size-3">
-                          <span className="absolute inset-0 rounded-full border-2 border-ink/20 border-t-ink animate-spin" />
+                      <div className="flex items-center gap-3 px-4 py-2 rounded-sm bg-canvas/90 border border-info/30 backdrop-blur-md">
+                        <span className="flex items-end gap-0.5 h-3" aria-hidden="true">
+                          {[0, 1, 2, 3].map((bar) => (
+                            <motion.span
+                              key={bar}
+                              className="w-0.5 bg-info"
+                              animate={{ height: [3, 12, 5, 9, 3] }}
+                              transition={{ duration: 1, repeat: Infinity, delay: bar * 0.12 }}
+                            />
+                          ))}
                         </span>
-                        <span className="text-xs font-medium text-ink">{bg.label}</span>
+                        <span className="text-xs font-medium text-ink">{bg.label || "Analyzing image..."}</span>
+                        <span className="text-[10px] tabular-nums text-info">{bg.progress}%</span>
                       </div>
                     </div>
                   </div>
@@ -344,9 +384,11 @@ export function RemoveBgForm() {
               <div className="flex items-center gap-2">
                 {isProcessing && (
                   <div className="flex items-center gap-3 text-sm text-body mr-1">
-                    <span className="relative size-3.5">
-                      <span className="absolute inset-0 rounded-full border-2 border-ink/20 border-t-ink animate-spin" />
-                    </span>
+                    <motion.span
+                      className="h-1 w-5 rounded-full bg-info"
+                      animate={{ scaleX: [0.35, 1, 0.35], opacity: [0.45, 1, 0.45] }}
+                      transition={{ duration: 1.1, repeat: Infinity }}
+                    />
                     <span className="tabular-nums text-xs font-medium">{bg.progress}%</span>
                     <span className="flex items-center gap-1 text-[11px] text-mute">
                       <Clock className="size-3" />

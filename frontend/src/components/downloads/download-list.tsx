@@ -4,12 +4,12 @@ import {
   Inbox, Loader2, Download as DownloadIcon, Trash2, RefreshCw,
   Pause, Play, Youtube, Music, Camera,
   MessageCircle, Globe, CheckCircle2, XCircle,
-  Clock, ArrowUpDown, Copy
+  Clock, ArrowUpDown, Copy, CirclePlay
 } from "lucide-react";
 import { MediaPreview } from "./media-preview";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { cn, formatQuality } from "@/lib/utils";
+import { cn, formatQuality, isAudioFile, isVideoFile } from "@/lib/utils";
 import { getDownloadStreamUrl } from "@/lib/api";
 import type { Download } from "@/lib/api";
 
@@ -385,13 +385,24 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume, 
                               </button>
                             )}
                             {d.status === "completed" && d.filename && (
-                              <a
-                                href={getDownloadStreamUrl(d.id)}
-                                className="inline-flex items-center justify-center size-7 rounded-sm hover:bg-surface-soft transition-colors text-mute hover:text-ink"
-                                title="Save to device"
-                              >
-                                <DownloadIcon className="size-3.5" />
-                              </a>
+                              <>
+                                {(isVideoFile(d.filename) || isAudioFile(d.filename)) && (
+                                  <button
+                                    onClick={() => setPreviewId(d.id)}
+                                    className="inline-flex items-center justify-center size-7 rounded-sm hover:bg-surface-soft transition-colors text-mute hover:text-ink"
+                                    title="Play in browser"
+                                  >
+                                    <CirclePlay className="size-3.5" />
+                                  </button>
+                                )}
+                                <a
+                                  href={getDownloadStreamUrl(d.id)}
+                                  className="inline-flex items-center justify-center size-7 rounded-sm hover:bg-surface-soft transition-colors text-mute hover:text-ink"
+                                  title="Save to device"
+                                >
+                                  <DownloadIcon className="size-3.5" />
+                                </a>
+                              </>
                             )}
                             <button
                               onClick={() => onDelete(d.id)}
@@ -506,13 +517,24 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume, 
                       </button>
                     )}
                     {d.status === "completed" && d.filename && (
-                      <a
-                        href={getDownloadStreamUrl(d.id)}
-                        className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:text-primary transition-colors px-2 py-1 rounded-md hover:bg-accent"
-                      >
-                        <DownloadIcon className="size-3" />
-                        Save
-                      </a>
+                      <>
+                        {(isVideoFile(d.filename) || isAudioFile(d.filename)) && (
+                          <button
+                            onClick={() => setPreviewId(d.id)}
+                            className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:text-primary transition-colors px-2 py-1 rounded-md hover:bg-accent"
+                          >
+                            <CirclePlay className="size-3" />
+                            Play
+                          </button>
+                        )}
+                        <a
+                          href={getDownloadStreamUrl(d.id)}
+                          className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:text-primary transition-colors px-2 py-1 rounded-md hover:bg-accent"
+                        >
+                          <DownloadIcon className="size-3" />
+                          Save
+                        </a>
+                      </>
                     )}
                     <button
                       onClick={() => onDelete(d.id)}

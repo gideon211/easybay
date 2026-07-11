@@ -880,19 +880,18 @@ def _save_upload(file: UploadFile) -> Path:
 
 bg_tasks: dict[str, dict] = {}
 bg_results: dict[str, bytes] = {}
+background_remover = BackgroundRemover()
 
 
 def _run_remove_bg(task_id: str, input_bytes: bytes, output_format: str):
     try:
-        remover = BackgroundRemover()
-
         def on_progress(phase: str, progress: int, label: str):
             bg_tasks[task_id] = {
                 "phase": phase, "progress": progress,
                 "label": label, "status": "processing",
             }
 
-        result = remover.remove(input_bytes, output_format=output_format, progress_callback=on_progress)
+        result = background_remover.remove(input_bytes, output_format=output_format, progress_callback=on_progress)
         bg_results[task_id] = result
         bg_tasks[task_id] = {"phase": "done", "progress": 100, "label": "Complete", "status": "complete"}
     except Exception as e:
@@ -904,10 +903,6 @@ def _run_remove_bg(task_id: str, input_bytes: bytes, output_format: str):
 async def start_remove_bg(file: UploadFile = File(...), output_format: str = "PNG"):
     if file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail=f"Unsupported image type: {file.content_type}")
-
-    # Clean up previous results
-    bg_tasks.clear()
-    bg_results.clear()
 
     input_bytes = await file.read()
     task_id = uuid.uuid4().hex
@@ -1005,8 +1000,7 @@ def remove_bg_from_download(download_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="File not found on disk")
 
     try:
-        remover = BackgroundRemover()
-        output = remover.remove(input_path.read_bytes())
+        output = background_remover.remove(input_path.read_bytes())
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Background removal failed: {e}") from e
 
@@ -1018,6 +1012,7 @@ def remove_bg_from_download(download_id: int, db: Session = Depends(get_db)):
 @app.post("/api/to-svg")
 async def convert_to_svg(
     file: UploadFile = File(...),
+    mode: str = "fidelity",
 ):
     if file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail=f"Unsupported image type: {file.content_type}")
@@ -1025,7 +1020,7 @@ async def convert_to_svg(
     ext = Path(file.filename or "image.png").suffix.lstrip(".").lower() or "png"
     try:
         converter = SvgConverter()
-        svg = converter.convert(input_bytes, img_format=ext)
+        svg = converter.convert(input_bytes, img_format=ext, mode=mode)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"SVG conversion failed: {e}") from e
 
@@ -1037,6 +1032,7 @@ async def convert_to_svg(
 @app.post("/api/to-svg/download/{download_id}")
 def convert_download_to_svg(
     download_id: int,
+    mode: str = "fidelity",
     db: Session = Depends(get_db),
 ):
     download = db.query(Download).filter(Download.id == download_id).first()
@@ -1052,7 +1048,7 @@ def convert_download_to_svg(
     ext = input_path.suffix.lstrip(".").lower() or "png"
     try:
         converter = SvgConverter()
-        svg = converter.convert(input_path.read_bytes(), img_format=ext)
+        svg = converter.convert(input_path.read_bytes(), img_format=ext, mode=mode)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"SVG conversion failed: {e}") from e
 

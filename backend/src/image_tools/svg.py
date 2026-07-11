@@ -1,3 +1,4 @@
+import base64
 import io
 import logging
 from collections import defaultdict
@@ -15,11 +16,30 @@ class SvgConverter:
         self,
         input_bytes: bytes,
         img_format: str = "png",
+        mode: str = "fidelity",
     ) -> str:
         source = ImageOps.exif_transpose(Image.open(io.BytesIO(input_bytes))).convert("RGBA")
         original_width, original_height = source.size
         if original_width < 1 or original_height < 1:
             raise ValueError("Image has no drawable pixels")
+
+        if mode == "fidelity":
+            # Photographs cannot be converted into a small set of vector paths without changing
+            # colors and introducing bands. Fidelity mode therefore keeps every source pixel in
+            # a lossless PNG payload while giving it an SVG viewport for unlimited layout scale.
+            # Vector mode remains available for artwork that benefits from editable color paths.
+            buffer = io.BytesIO()
+            source.save(buffer, format="PNG", optimize=True)
+            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+            return (
+                f'<svg xmlns="http://www.w3.org/2000/svg" width="{original_width}" height="{original_height}" '
+                f'viewBox="0 0 {original_width} {original_height}" preserveAspectRatio="xMidYMid meet">\n'
+                f'  <image width="{original_width}" height="{original_height}" '
+                f'href="data:image/png;base64,{encoded}"/>\n</svg>\n'
+            )
+
+        if mode != "vector":
+            raise ValueError("SVG mode must be 'fidelity' or 'vector'")
 
         # A path for every source pixel would make a photograph-sized SVG enormous. I retain
         # the original view size but trace a bounded working image, which produces genuinely
@@ -35,7 +55,9 @@ class SvgConverter:
         rgb = traced.convert("RGB").quantize(
             colors=self.MAX_COLORS,
             method=Image.Quantize.MEDIANCUT,
-            dither=Image.Dither.FLOYDSTEINBERG,
+            # Dithering invents alternating shades that look like noise after vector tracing.
+            # Disabling it gives logos and flat artwork clean, stable color regions.
+            dither=Image.Dither.NONE,
         ).convert("RGB")
         width, height = traced.size
         pixels = rgb.load()

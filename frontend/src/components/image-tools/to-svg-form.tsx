@@ -10,7 +10,6 @@ type Status = "idle" | "processing" | "done" | "error";
 export function ToSvgForm() {
   const inputRef = useRef<HTMLInputElement>(null);
   const sliderRef = useRef<HTMLDivElement>(null);
-  const isDragging = useRef(false);
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -37,6 +36,13 @@ export function ToSvgForm() {
     const f = e.dataTransfer.files[0];
     if (f) handleFile(f);
   }, [handleFile]);
+
+  const updateSliderPosition = useCallback((clientX: number) => {
+    const bounds = sliderRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const x = Math.max(0, Math.min(clientX - bounds.left, bounds.width));
+    setSliderPos((x / bounds.width) * 100);
+  }, []);
 
   const handleSubmit = async () => {
     if (!file) return;
@@ -76,7 +82,6 @@ export function ToSvgForm() {
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
-              onClick={() => !isProcessing && inputRef.current?.click()}
               className={cn(
                 "relative block border border-dashed rounded-sm transition-all duration-300 cursor-pointer overflow-hidden",
                 "min-h-[140px] flex items-center justify-center",
@@ -91,7 +96,11 @@ export function ToSvgForm() {
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+                onChange={(e) => {
+                  const selected = e.target.files?.[0];
+                  if (selected) handleFile(selected);
+                  e.currentTarget.value = "";
+                }}
                 disabled={isProcessing}
               />
 
@@ -232,16 +241,35 @@ export function ToSvgForm() {
           ) : (
             <div
               ref={sliderRef}
-              className="relative w-full min-h-[400px] max-h-[560px] select-none"
-              onMouseDown={() => { isDragging.current = true; }}
-              onMouseMove={(e) => {
-                if (!isDragging.current || !sliderRef.current) return;
-                const rect = sliderRef.current.getBoundingClientRect();
-                const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-                setSliderPos((x / rect.width) * 100);
+              className={cn(
+                "relative w-full h-[min(560px,65vh)] min-h-[400px] select-none overflow-hidden",
+                hasResult && "cursor-ew-resize touch-none",
+              )}
+              onPointerDown={(event) => {
+                if (!hasResult) return;
+                event.currentTarget.setPointerCapture(event.pointerId);
+                updateSliderPosition(event.clientX);
               }}
-              onMouseUp={() => { isDragging.current = false; }}
-              onMouseLeave={() => { isDragging.current = false; }}
+              onPointerMove={(event) => {
+                if (!hasResult || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+                updateSliderPosition(event.clientX);
+              }}
+              onPointerUp={(event) => {
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                }
+              }}
+              role={hasResult ? "slider" : undefined}
+              aria-label={hasResult ? "Compare original image with SVG result" : undefined}
+              aria-valuemin={hasResult ? 0 : undefined}
+              aria-valuemax={hasResult ? 100 : undefined}
+              aria-valuenow={hasResult ? Math.round(sliderPos) : undefined}
+              tabIndex={hasResult ? 0 : undefined}
+              onKeyDown={(event) => {
+                if (!hasResult) return;
+                if (event.key === "ArrowLeft") setSliderPos((position) => Math.max(0, position - 2));
+                if (event.key === "ArrowRight") setSliderPos((position) => Math.min(100, position + 2));
+              }}
             >
               {/* Checkerboard for transparency */}
               <div
@@ -254,12 +282,12 @@ export function ToSvgForm() {
               />
 
               {/* Result (base) */}
-              <div className="relative z-10 flex items-center justify-center min-h-[400px]">
+              <div className="absolute inset-0 z-10">
                 {hasResult && (
                   <img
                     src={resultUrl}
                     alt="SVG result"
-                    className="max-w-full max-h-[520px] object-contain"
+                    className="size-full object-contain p-4"
                     draggable={false}
                   />
                 )}
@@ -267,7 +295,7 @@ export function ToSvgForm() {
                   <img
                     src={preview}
                     alt="Original"
-                    className="max-w-full max-h-[520px] object-contain"
+                    className="size-full object-contain p-4"
                     draggable={false}
                   />
                 )}
@@ -277,7 +305,7 @@ export function ToSvgForm() {
               {preview && !isProcessing && (
                 <div
                   className="absolute inset-0 z-20 overflow-hidden"
-                  style={{ width: `${hasResult ? sliderPos : 100}%` }}
+                  style={{ clipPath: `inset(0 ${hasResult ? 100 - sliderPos : 0}% 0 0)` }}
                 >
                   <div
                     className="absolute inset-0"
@@ -287,11 +315,11 @@ export function ToSvgForm() {
                       backgroundPosition: "0 0, 10px 10px",
                     }}
                   />
-                  <div className="relative z-10 flex items-center justify-center min-h-[400px]">
+                  <div className="absolute inset-0 z-10">
                     <img
                       src={preview}
                       alt="Original"
-                      className="max-w-full max-h-[520px] object-contain"
+                      className="size-full object-contain p-4"
                       draggable={false}
                     />
                   </div>
@@ -301,13 +329,16 @@ export function ToSvgForm() {
               {/* Slider handle */}
               {hasResult && (
                 <div
-                  className="absolute top-0 bottom-0 z-30"
+                  className="absolute top-0 bottom-0 z-30 pointer-events-none"
                   style={{ left: `${sliderPos}%`, width: "2px" }}
                 >
-                  <div className="h-full w-full bg-canvas/90" />
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-10 rounded-sm bg-canvas border border-hairline flex items-center justify-center">
-                    <ArrowLeftRight className="size-4 text-mute" />
-                  </div>
+                  <div className="h-full w-full bg-info shadow-[0_0_12px_rgba(10,132,255,0.55)]" />
+                  <motion.div
+                    whileHover={{ scale: 1.06 }}
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-11 rounded-full bg-canvas border-2 border-info flex items-center justify-center shadow-[0_4px_18px_rgba(0,0,0,0.28)]"
+                  >
+                    <ArrowLeftRight className="size-4 text-info" />
+                  </motion.div>
                 </div>
               )}
 
@@ -328,16 +359,24 @@ export function ToSvgForm() {
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-canvas/30"
+                  className="absolute inset-0 z-40 overflow-hidden bg-canvas/25 backdrop-blur-[1px]"
                 >
-                  <div className="relative size-12">
-                    <div className="absolute inset-0 rounded-sm border-2 border-ink/20" />
-                    <div className="absolute inset-0 rounded-sm border-[3px] border-ink/20 border-t-ink animate-spin" />
-                    <div className="absolute inset-[5px] rounded-sm bg-ink/5 flex items-center justify-center">
-                      <FileCode className="size-4 text-ink" />
-                    </div>
+                  <motion.div
+                    className="absolute inset-x-[8%] h-20 bg-gradient-to-b from-transparent via-info/15 to-transparent"
+                    animate={{ top: ["-15%", "110%"] }}
+                    transition={{ duration: 2.2, repeat: Infinity, ease: [0.4, 0, 0.6, 1] }}
+                  />
+                  <motion.div
+                    className="absolute inset-x-[8%] h-px bg-info shadow-[0_0_18px_rgba(10,132,255,0.85)]"
+                    animate={{ top: ["-5%", "105%"] }}
+                    transition={{ duration: 2.2, repeat: Infinity, ease: [0.4, 0, 0.6, 1] }}
+                  />
+                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 rounded-sm border border-info/30 bg-canvas/90 px-4 py-2 backdrop-blur-md">
+                    <motion.div animate={{ scale: [0.92, 1.08, 0.92] }} transition={{ duration: 1.4, repeat: Infinity }}>
+                      <FileCode className="size-4 text-info" />
+                    </motion.div>
+                    <p className="text-xs font-medium text-ink">Tracing editable vector paths...</p>
                   </div>
-                  <p className="text-sm text-body">Converting to SVG...</p>
                 </motion.div>
               )}
             </div>
