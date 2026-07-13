@@ -121,7 +121,7 @@ jobs:
           tags: easybay-backend:ci
           cache-from: type=gha
       - name: Build Frontend
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.frontend
