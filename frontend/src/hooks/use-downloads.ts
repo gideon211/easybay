@@ -8,7 +8,6 @@ import {
   retryDownload,
   clearFailedDownloads,
   reDownload,
-  getDownloadStreamUrl,
   type Download,
   type DownloadRequest,
 } from "@/lib/api";
@@ -106,11 +105,9 @@ export function useDownloads() {
                 notifiedIds.current.add(downloadId);
                 notifyComplete("Download complete", data.filename ?? undefined);
               }
-              const streamUrl = getDownloadStreamUrl(downloadId);
-              const a = document.createElement("a");
-              a.href = streamUrl;
-              a.download = "";
-              a.click();
+              // Completion should make the media available in the web player, not immediately
+              // trigger the destructive save endpoint. The old automatic click downloaded and
+              // then deleted the server copy before users could press Play in the Downloads page.
             }
             return next;
           });

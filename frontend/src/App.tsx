@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { Toaster, toast } from "sonner";
+import { Plus } from "lucide-react";
 import { Header } from "@/components/layout/header";
 import { Sidebar, type Page } from "@/components/layout/sidebar";
 import { Dashboard } from "@/components/dashboard/dashboard";
 import { DownloadList } from "@/components/downloads/download-list";
+import { DownloadModal } from "@/components/downloads/download-modal";
+import { Button } from "@/components/ui/button";
 import { TorrentForm } from "@/components/torrents/torrent-form";
 import { TorrentList } from "@/components/torrents/torrent-list";
 import { ImageTools } from "@/components/image-tools/image-tools";
@@ -64,13 +67,14 @@ export default function App() {
     removeTorrent,
   } = useTorrents();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
   const [isTorrentSubmitting, setIsTorrentSubmitting] = useState(false);
 
-  const handleSubmit = async (
+  const submitDownload = async (
     url: string,
     quality: string,
     removeWatermark?: boolean
-  ) => {
+  ): Promise<boolean> => {
     setIsSubmitting(true);
     try {
       await addDownload({
@@ -81,14 +85,26 @@ export default function App() {
       toast.success("Download submitted", {
         description: "Your download is starting...",
       });
+      return true;
     } catch (err) {
       toast.error("Failed to submit download", {
         description:
           err instanceof Error ? err.message : "Unknown error",
       });
+      return false;
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Dashboard forms only need to submit, while the modal also uses the boolean result to
+  // decide whether it is safe to close. This wrapper keeps the existing form contract narrow.
+  const handleSubmit = async (
+    url: string,
+    quality: string,
+    removeWatermark?: boolean
+  ): Promise<void> => {
+    await submitDownload(url, quality, removeWatermark);
   };
 
   const handleTorrentSubmit = async (source: string, file?: File) => {
@@ -137,12 +153,25 @@ export default function App() {
 
             {page === "downloads" && (
               <div className="space-y-6">
-                <div>
-                  <h1 className="text-xl font-semibold">Downloads</h1>
-                  <p className="text-sm text-body mt-0.5">
-                    Download videos from social media platforms
-                  </p>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h1 className="text-xl font-semibold">Downloads</h1>
+                    <p className="text-sm text-body mt-0.5">
+                      Download videos from social media platforms
+                    </p>
+                  </div>
+                  <Button onClick={() => setDownloadModalOpen(true)} className="shrink-0 gap-2">
+                    <Plus className="size-4" />
+                    <span className="hidden sm:inline">New download</span>
+                    <span className="sm:hidden">Add</span>
+                  </Button>
                 </div>
+                <DownloadModal
+                  open={downloadModalOpen}
+                  isSubmitting={isSubmitting}
+                  onClose={() => setDownloadModalOpen(false)}
+                  onSubmit={submitDownload}
+                />
                 {downloadsError && (
                   <div className="p-4 bg-destructive/10 text-destructive rounded-sm text-sm">
                     {downloadsError}

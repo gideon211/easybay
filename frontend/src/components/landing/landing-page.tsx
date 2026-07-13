@@ -1,6 +1,7 @@
 import { motion } from "motion/react";
 import { Download, Magnet, Image, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 interface LandingPageProps {
   onContinue: () => void;
@@ -49,7 +50,10 @@ const features = [
 
 export function LandingPage({ onContinue }: LandingPageProps) {
   return (
-    <div className="h-screen flex flex-col items-center justify-center bg-canvas px-6 overflow-hidden">
+    <div className="relative h-screen flex flex-col items-center justify-center bg-canvas text-ink px-6 overflow-hidden transition-colors duration-200">
+      <div className="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
       <div className="flex flex-col items-center gap-10 max-w-lg w-full">
         {/* Logo */}
         <motion.div
