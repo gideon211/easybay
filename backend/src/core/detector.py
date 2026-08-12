@@ -26,6 +26,13 @@ TWITTER_PATTERNS = [
     r'(?:https?://)?t\.co/[\w]+',
 ]
 
+SNAPCHAT_PATTERNS = [
+    # yt-dlp's SnapchatSpotlight extractor supports public Spotlight pages. Keeping this narrow
+    # prevents EasyBay from labeling profile, chat, or private Story URLs as downloadable when
+    # those routes require authentication and are not supported by the extractor.
+    r'(?:https?://)?(?:www\.)?snapchat\.com/spotlight/([\w-]+)',
+]
+
 
 def detect_video_type(url: str) -> VideoType:
     url = url.strip().lower()
@@ -45,6 +52,10 @@ def detect_video_type(url: str) -> VideoType:
     for pattern in TWITTER_PATTERNS:
         if re.match(pattern, url):
             return VideoType.TWITTER
+
+    for pattern in SNAPCHAT_PATTERNS:
+        if re.match(pattern, url):
+            return VideoType.SNAPCHAT
 
     return VideoType.UNKNOWN
 

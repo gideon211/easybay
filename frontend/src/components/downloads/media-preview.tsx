@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { memo, useEffect, useCallback } from "react";
 import { X, Film, Music } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatQuality, isVideoFile, isAudioFile } from "@/lib/utils";
@@ -10,7 +10,7 @@ interface MediaPreviewProps {
   onClose: () => void;
 }
 
-export function MediaPreview({ download, onClose }: MediaPreviewProps) {
+function MediaPreviewView({ download, onClose }: MediaPreviewProps) {
   const fileUrl = getDownloadFileUrl(download.id);
   const isVideo = isVideoFile(download.filename);
   const isAudio = isAudioFile(download.filename);
@@ -37,7 +37,7 @@ export function MediaPreview({ download, onClose }: MediaPreviewProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
       onClick={handleBackdropClick}
     >
       <div className="bg-card border border-hairline w-full max-w-3xl max-h-[90dvh] overflow-hidden flex flex-col">
@@ -74,7 +74,9 @@ export function MediaPreview({ download, onClose }: MediaPreviewProps) {
                 <video
                   src={fileUrl}
                   controls
-                  className="w-full rounded-sm bg-ink"
+                  preload="auto"
+                  playsInline
+                  className="block h-auto w-auto max-w-full mx-auto rounded-sm bg-black object-contain [contain:paint]"
                   style={{ maxHeight: "60dvh" }}
                 >
                   Your browser does not support video playback.
@@ -124,3 +126,7 @@ export function MediaPreview({ download, onClose }: MediaPreviewProps) {
     </div>
   );
 }
+
+// Native video playback continues independently of React. Avoid sending the element through
+// reconciliation when unrelated downloads or dashboard metrics update in the background.
+export const MediaPreview = memo(MediaPreviewView);

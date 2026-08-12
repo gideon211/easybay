@@ -31,6 +31,7 @@ function detectPlatform(url: string): string | null {
   if (/instagram\.com/.test(lower)) return "instagram";
   if (/youtube\.com|youtu\.be/.test(lower)) return "youtube";
   if (/x\.com|twitter\.com/.test(lower)) return "twitter";
+  if (/snapchat\.com\/spotlight\//.test(lower)) return "snapchat";
   return null;
 }
 
@@ -49,7 +50,7 @@ export function QuickAdd({ onSubmit, isSubmitting }: QuickAddProps) {
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 640px)");
-    const update = () => setPlaceholder(mq.matches ? "Paste URL from YouTube, TikTok, Instagram, Twitter(X)..." : "Paste URL...");
+    const update = () => setPlaceholder(mq.matches ? "Paste a YouTube, TikTok, Instagram, X, or Snapchat URL..." : "Paste URL...");
     update();
     mq.addEventListener("change", update);
     return () => mq.removeEventListener("change", update);

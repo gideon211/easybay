@@ -7,6 +7,7 @@ class VideoType(Enum):
     TIKTOK = "tiktok"
     INSTAGRAM = "instagram"
     TWITTER = "twitter"
+    SNAPCHAT = "snapchat"
     UNKNOWN = "unknown"
 
 

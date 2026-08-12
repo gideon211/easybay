@@ -1,10 +1,10 @@
-import { useState, useMemo, useEffect } from "react";
+import { memo, useCallback, useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 import {
   Inbox, Loader2, Download as DownloadIcon, Trash2, RefreshCw,
   Pause, Play, Youtube, Music, Camera,
   MessageCircle, Globe, CheckCircle2, XCircle,
-  Clock, ArrowUpDown, Copy, CirclePlay
+  Clock, ArrowUpDown, Copy, CirclePlay, Ghost
 } from "lucide-react";
 import { MediaPreview } from "./media-preview";
 import { Progress } from "@/components/ui/progress";
@@ -70,6 +70,8 @@ function DownloadThumbnail({ download, className }: { download: Download; classN
       return <Camera className={cls} />;
     case "twitter":
       return <MessageCircle className={cls} />;
+    case "snapchat":
+      return <Ghost className={cn(cls, "text-yellow-500")} />;
     default:
       return <Globe className={cn(cls, "text-mute")} />;
   }
@@ -126,7 +128,7 @@ function SortArrow({ active, dir }: { active: boolean; dir: SortDir }) {
   );
 }
 
-export function DownloadList({ downloads, loading, onDelete, onPause, onResume, onRetry, onClearFailed }: DownloadListProps) {
+function DownloadListView({ downloads, loading, onDelete, onPause, onResume, onRetry, onClearFailed }: DownloadListProps) {
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sortField, setSortField] = useState<SortField>("date");
@@ -135,6 +137,7 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume, 
   const previewDownload = previewId
     ? downloads.find((d) => d.id === previewId)
     : null;
+  const closePreview = useCallback(() => setPreviewId(null), []);
 
   const statusCounts = useMemo(() => ({
     all: downloads.length,
@@ -205,7 +208,7 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume, 
       {previewDownload && (
         <MediaPreview
           download={previewDownload}
-          onClose={() => setPreviewId(null)}
+          onClose={closePreview}
         />
       )}
 
@@ -561,3 +564,7 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume, 
     </div>
   );
 }
+
+// App-level torrent and system-stat polling should not rebuild a completed downloads table or
+// touch its native media player when none of this component's inputs changed.
+export const DownloadList = memo(DownloadListView);
