@@ -13,6 +13,32 @@ import {
 } from "@/lib/api";
 import { createProgressSocket, type ProgressMessage } from "@/lib/ws";
 import { notifyComplete, requestNotificationPermission } from "@/lib/notify";
+import { isVideoFile } from "@/lib/utils";
+import { isAndroidDevice, saveDownloadToDevice } from "@/lib/device-download";
+
+const DOWNLOAD_FIELDS: (keyof Download)[] = [
+  "id", "url", "video_type", "quality", "filename", "status", "progress", "speed", "eta",
+  "error_message", "file_size", "remove_watermark", "created_at", "completed_at",
+];
+
+function reconcileDownloads(previous: Download[], incoming: Download[]): Download[] {
+  const previousById = new Map(previous.map((download) => [download.id, download]));
+  const reconciled = incoming.map((download) => {
+    const existing = previousById.get(download.id);
+    const unchanged = existing && DOWNLOAD_FIELDS.every(
+      (field) => existing[field] === download[field]
+    );
+    return unchanged ? existing : download;
+  });
+
+  // Polling completed downloads usually returns byte-for-byte identical data. Preserving the
+  // array reference prevents React from rerendering the download table and an active <video>
+  // element every five seconds. Individual object references are also retained so a different
+  // active download can update without disturbing the completed item currently being previewed.
+  const allReferencesMatch = reconciled.length === previous.length
+    && reconciled.every((download, index) => download === previous[index]);
+  return allReferencesMatch ? previous : reconciled;
+}
 
 /**
  * Manages download state, WebSocket connections, and API interactions.
@@ -22,12 +48,32 @@ export function useDownloads() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const notifiedIds = useRef(new Set<number>());
+  const autoSavedIds = useRef(new Set<number>());
 
   // Keep connection ownership stable across renders. A plain Map created in the hook body can be
   // replaced whenever React renders, leaving later effects unable to find and close older sockets.
   const activeConnections = useRef(new Map<number, () => void>());
 
   requestNotificationPermission();
+
+  const handleCompletedDownload = useCallback((downloadId: number, filename: string | null) => {
+    if (!notifiedIds.current.has(downloadId)) {
+      notifiedIds.current.add(downloadId);
+      notifyComplete("Download complete", filename ?? undefined);
+    }
+
+    if (
+      isAndroidDevice()
+      && isVideoFile(filename)
+      && !autoSavedIds.current.has(downloadId)
+    ) {
+      // On Android, completed videos should go straight to local storage. The stream endpoint is
+      // now non-destructive, so handing it to the browser download manager no longer removes
+      // EasyBay's copy or breaks subsequent web playback.
+      autoSavedIds.current.add(downloadId);
+      saveDownloadToDevice(downloadId);
+    }
+  }, []);
 
   const fetchDownloads = useCallback(async () => {
     try {
@@ -37,12 +83,11 @@ export function useDownloads() {
           if (d.status === "completed" && !notifiedIds.current.has(d.id)) {
             const old = prev.find((p) => p.id === d.id);
             if (old && old.status !== "completed") {
-              notifiedIds.current.add(d.id);
-              notifyComplete("Download complete", d.filename ?? undefined);
+              handleCompletedDownload(d.id, d.filename);
             }
           }
         }
-        return data;
+        return reconcileDownloads(prev, data);
       });
       setError(null);
     } catch (err) {
@@ -50,7 +95,7 @@ export function useDownloads() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [handleCompletedDownload]);
 
   // Poll for updates every 5 seconds
   useEffect(() => {
@@ -83,13 +128,8 @@ export function useDownloads() {
                 : d
             );
             if (data.status === "completed" && !wasCompleted) {
-              if (!notifiedIds.current.has(downloadId)) {
-                notifiedIds.current.add(downloadId);
-                notifyComplete("Download complete", data.filename ?? undefined);
-              }
-              // Completion should make the media available in the web player, not immediately
-              // trigger the destructive save endpoint. The old automatic click downloaded and
-              // then deleted the server copy before users could press Play in the Downloads page.
+              const completedFilename = data.filename ?? old?.filename ?? null;
+              handleCompletedDownload(downloadId, completedFilename);
             }
             return next;
           });
@@ -107,7 +147,7 @@ export function useDownloads() {
 
       activeConnections.current.set(downloadId, cleanup);
     },
-    []
+    [handleCompletedDownload]
   );
 
   const addDownload = useCallback(

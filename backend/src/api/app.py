@@ -559,6 +559,10 @@ def get_download_file(download_id: int, db: Session = Depends(get_db)):
         content_disposition_type="inline",
         headers={
             "Accept-Ranges": "bytes",
+            # Completed media is immutable for the lifetime of its download record. Allowing the
+            # browser to reuse fetched ranges avoids redundant disk reads if React or the player
+            # requests the same segment again during seeking or control changes.
+            "Cache-Control": "private, max-age=3600",
         },
     )
 
