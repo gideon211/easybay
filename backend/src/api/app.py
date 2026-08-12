@@ -18,7 +18,6 @@ import yt_dlp
 from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from starlette.background import BackgroundTask
 from fastbencode import bencode
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -39,7 +38,8 @@ logger = logging.getLogger(__name__)
 
 config = get_config()
 executor = ThreadPoolExecutor(max_workers=config.max_concurrent_downloads)
-progress_connections: dict[int, list[asyncio.Queue]] = {}
+progress_connections: dict[int, list[tuple[asyncio.AbstractEventLoop, asyncio.Queue]]] = {}
+progress_connections_lock = threading.Lock()
 torrent_progress_connections: dict[str, list[asyncio.Queue]] = {}
 pause_events: dict[int, threading.Event] = {}
 _cleanup_stop = threading.Event()
@@ -50,11 +50,52 @@ def _cleanup_old_files():
             now = time.time()
             cutoff = now - 3600
             for f in config.download_dir.iterdir():
-                if f.is_file() and f.stat().st_mtime < cutoff:
+                # Completed downloads belong to the user and must remain available for browser
+                # playback and repeated saves. Only remove stale yt-dlp working files here; a
+                # blanket age check previously made valid media silently disappear after an hour.
+                is_temporary = (
+                    f.name.endswith((".part", ".ytdl", ".temp"))
+                    or ".part-Frag" in f.name
+                )
+                if f.is_file() and is_temporary and f.stat().st_mtime < cutoff:
                     f.unlink(missing_ok=True)
         except Exception:
             pass
         _cleanup_stop.wait(1800)
+
+
+def _put_latest(queue: asyncio.Queue, payload: dict) -> None:
+    """Keep the newest progress event when a slow client falls behind.
+
+    Progress hooks can run many times per second. A one-item queue prevents an inactive browser
+    tab from accumulating thousands of stale percentages that it would have to replay later.
+    This function runs on the WebSocket event loop, where asyncio.Queue is safe to access.
+    """
+    if queue.full():
+        try:
+            queue.get_nowait()
+        except asyncio.QueueEmpty:
+            pass
+    queue.put_nowait(payload)
+
+
+def publish_download_progress(download_id: int, payload: dict) -> None:
+    """Forward worker-thread updates to each WebSocket's owning asyncio event loop.
+
+    Downloader jobs run in ThreadPoolExecutor, while asyncio.Queue is explicitly not thread-safe.
+    Calling queue.put_nowait from those workers did not reliably wake the WebSocket, which made
+    TikTok and X downloads appear frozen before jumping straight to completed.
+    """
+    with progress_connections_lock:
+        connections = list(progress_connections.get(download_id, ()))
+
+    for loop, queue in connections:
+        try:
+            loop.call_soon_threadsafe(_put_latest, queue, payload.copy())
+        except RuntimeError:
+            # The browser may disconnect while a worker is emitting its final callback. The
+            # database still retains the latest state, so a closed event loop is safe to ignore.
+            continue
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -234,9 +275,12 @@ def run_download(download_id: int, url: str, quality: str):
 
         last_persisted_at = 0.0
         last_persisted_progress = -1.0
+        last_emitted_at = 0.0
+        last_emitted_progress = -1.0
 
         def on_progress(info):
             nonlocal last_persisted_at, last_persisted_progress
+            nonlocal last_emitted_at, last_emitted_progress
             if download_id in pause_events and pause_events[download_id].is_set():
                 raise yt_dlp.utils.DownloadError("Paused by user")
 
@@ -256,15 +300,19 @@ def run_download(download_id: int, url: str, quality: str):
                 last_persisted_at = now
                 last_persisted_progress = info.progress
 
-            if download_id in progress_connections:
-                for queue in progress_connections[download_id]:
-                    queue.put_nowait({
-                        "progress": info.progress,
-                        "speed": info.speed,
-                        "eta": info.eta,
-                        "status": info.status.value,
-                        "filename": info.filename,
-                    })
+            # Ten UI updates per second are visually smooth without flooding the event loop when
+            # yt-dlp emits a callback for every small fragment or buffer write.
+            emitted_delta = abs(info.progress - last_emitted_progress)
+            if now - last_emitted_at >= 0.1 or emitted_delta >= 0.01:
+                publish_download_progress(download_id, {
+                    "progress": info.progress,
+                    "speed": info.speed,
+                    "eta": info.eta,
+                    "status": info.status.value,
+                    "filename": info.filename,
+                })
+                last_emitted_at = now
+                last_emitted_progress = info.progress
 
         pause_event = pause_events.get(download_id)
         downloader = Downloader(progress_callback=on_progress, cancel_event=pause_event)
@@ -293,16 +341,14 @@ def run_download(download_id: int, url: str, quality: str):
 
         db.commit()
 
-        if download_id in progress_connections:
-            for queue in progress_connections[download_id]:
-                queue.put_nowait({
-                    "progress": download.progress,
-                    "speed": download.speed,
-                    "eta": download.eta,
-                    "status": download.status,
-                    "filename": download.filename,
-                    "error": download.error_message,
-                })
+        publish_download_progress(download_id, {
+            "progress": download.progress,
+            "speed": download.speed,
+            "eta": download.eta,
+            "status": download.status,
+            "filename": download.filename,
+            "error": download.error_message,
+        })
 
     except Exception as e:
         download = db.query(Download).filter(Download.id == download_id).first()
@@ -391,12 +437,10 @@ def pause_download(download_id: int, db: Session = Depends(get_db)):
     download.status = "paused"
     db.commit()
 
-    if download_id in progress_connections:
-        for queue in progress_connections[download_id]:
-            queue.put_nowait({
-                "progress": download.progress,
-                "status": "paused",
-            })
+    publish_download_progress(download_id, {
+        "progress": download.progress,
+        "status": "paused",
+    })
 
     return {"message": "Download paused"}
 
@@ -454,12 +498,10 @@ def resume_download(download_id: int, db: Session = Depends(get_db)):
 
     executor.submit(run_download, download.id, download.url, download.quality)
 
-    if download_id in progress_connections:
-        for queue in progress_connections[download_id]:
-            queue.put_nowait({
-                "progress": download.progress,
-                "status": "pending",
-            })
+    publish_download_progress(download_id, {
+        "progress": download.progress,
+        "status": "pending",
+    })
 
     return {"message": "Download resumed"}
 
@@ -525,18 +567,6 @@ def stream_download_file(download_id: int, db: Session = Depends(get_db)):
         ".ogg": "audio/ogg",
     }
 
-    def cleanup():
-        try:
-            if filepath.exists():
-                filepath.unlink()
-            with SessionLocal() as clean_db:
-                d = clean_db.query(Download).filter(Download.id == download_id).first()
-                if d:
-                    d.file_size = None
-                    clean_db.commit()
-        except Exception:
-            pass
-
     file_size = filepath.stat().st_size
     return FileResponse(
         path=str(filepath),
@@ -545,9 +575,7 @@ def stream_download_file(download_id: int, db: Session = Depends(get_db)):
         content_disposition_type="attachment",
         headers={
             "Content-Length": str(file_size),
-            "Content-Disposition": f'attachment; filename="{download.filename}"',
         },
-        background=BackgroundTask(cleanup),
     )
 
 
@@ -841,12 +869,28 @@ async def websocket_torrent_progress(websocket: WebSocket, torrent_id: int):
 async def websocket_progress(websocket: WebSocket, download_id: int):
     await websocket.accept()
 
-    queue: asyncio.Queue = asyncio.Queue()
-    if download_id not in progress_connections:
-        progress_connections[download_id] = []
-    progress_connections[download_id].append(queue)
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=1)
+    connection = (loop, queue)
+    with progress_connections_lock:
+        progress_connections.setdefault(download_id, []).append(connection)
 
     try:
+        # Short social-media downloads can emit their first callback before the browser finishes
+        # opening its socket. Send the persisted snapshot immediately so the UI never waits for a
+        # future hook that may not arrive until completion.
+        with SessionLocal() as db:
+            download = db.query(Download).filter(Download.id == download_id).first()
+            if download:
+                await websocket.send_json({
+                    "progress": download.progress,
+                    "speed": download.speed,
+                    "eta": download.eta,
+                    "status": download.status,
+                    "filename": download.filename,
+                    "error": download.error_message,
+                })
+
         while True:
             try:
                 data = await asyncio.wait_for(queue.get(), timeout=30.0)
@@ -858,10 +902,12 @@ async def websocket_progress(websocket: WebSocket, download_id: int):
     except WebSocketDisconnect:
         pass
     finally:
-        if download_id in progress_connections:
-            progress_connections[download_id].remove(queue)
-            if not progress_connections[download_id]:
-                del progress_connections[download_id]
+        with progress_connections_lock:
+            connections = progress_connections.get(download_id)
+            if connections and connection in connections:
+                connections.remove(connection)
+                if not connections:
+                    del progress_connections[download_id]
 
 
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp"}
