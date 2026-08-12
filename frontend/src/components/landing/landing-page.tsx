@@ -34,7 +34,7 @@ const features = [
   {
     icon: Download,
     title: "Platform Downloads",
-    desc: "YouTube, TikTok, Instagram, Twitter",
+    desc: "YouTube, TikTok, Instagram, X, Snapchat Spotlight",
   },
   {
     icon: Image,

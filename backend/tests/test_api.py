@@ -2,6 +2,7 @@ import asyncio
 import threading
 
 import pytest
+import yt_dlp
 from fastapi.testclient import TestClient
 
 from src.api.app import (
@@ -44,6 +45,50 @@ def test_submit_download_invalid_quality():
     # Raw format IDs are now accepted - passed through to yt-dlp
     response = client.post("/api/download", json={"url": "https://youtube.com/watch?v=123", "quality": "invalid"})
     assert response.status_code == 200
+
+
+def test_formats_exposes_direct_media_without_formats_array(monkeypatch):
+    class FakeYoutubeDL:
+        def __init__(self, _options):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def extract_info(self, _url, download):
+            assert download is False
+            return {
+                "id": "spotlight-id",
+                "url": "https://cdn.example.com/spotlight.mp4",
+                "ext": "mp4",
+                "width": 0,
+                "height": 0,
+            }
+
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYoutubeDL)
+
+    response = client.post(
+        "/api/formats",
+        json={"url": "https://www.snapchat.com/spotlight/spotlight-id"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [{
+        "format_id": "best",
+        "height": 0,
+        "width": 0,
+        "ext": "mp4",
+        "filesize": None,
+        "vcodec": "unknown",
+        "acodec": "unknown",
+        "fps": None,
+        "vbr": None,
+        "abr": None,
+        "label": "Video · Unknown size · MP4",
+    }]
 
 
 def test_list_downloads_empty():

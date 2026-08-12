@@ -32,6 +32,7 @@ function detectPlatform(url: string): string | null {
   if (/instagram\.com/.test(lower)) return "instagram";
   if (/youtube\.com|youtu\.be/.test(lower)) return "youtube";
   if (/x\.com|twitter\.com/.test(lower)) return "twitter";
+  if (/snapchat\.com\/spotlight\//.test(lower)) return "snapchat";
   return null;
 }
 

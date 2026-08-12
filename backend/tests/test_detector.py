@@ -43,6 +43,14 @@ class TestDetectVideoType:
         url = "https://x.com/user/status/1234567890"
         assert detect_video_type(url) == VideoType.TWITTER
 
+    def test_snapchat_spotlight(self):
+        url = "https://www.snapchat.com/spotlight/W7_EDlXWTBiXAEEniNoMPwAAYYWtidGhudGZp"
+        assert detect_video_type(url) == VideoType.SNAPCHAT
+
+    def test_snapchat_profile_is_not_mislabeled_as_downloadable_spotlight(self):
+        url = "https://www.snapchat.com/add/example"
+        assert detect_video_type(url) == VideoType.UNKNOWN
+
     def test_unknown_url(self):
         url = "https://example.com/video"
         assert detect_video_type(url) == VideoType.UNKNOWN

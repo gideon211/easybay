@@ -175,11 +175,13 @@ def _format_label(fmt: dict) -> str:
         label = "480p"
     elif has_video and height >= 360:
         label = "360p"
-    elif has_video:
+    elif has_video and height:
         label = f"{height}p"
     elif has_audio and not has_video:
         abr = fmt.get("abr") or 0
         label = f"Audio {abr:.0f}kbps" if abr else "Audio only"
+    elif has_video:
+        label = "Video"
     else:
         label = ext.upper()
 
@@ -206,6 +208,25 @@ def list_formats(request: FormatRequest):
             info = ydl.extract_info(request.url, download=False)
             raw_formats = info.get("formats", []) if info else []
 
+        if info and not raw_formats and info.get("url"):
+            # Some extractors, including Snapchat Spotlight, expose one direct media URL instead
+            # of a formats array. Treating that valid response as "no formats" left the frontend
+            # Download button disabled even though yt-dlp could download the MP4 successfully.
+            # The private marker only relaxes filtering for this synthesized direct-media entry;
+            # it is never returned by the public API.
+            raw_formats = [{
+                "format_id": info.get("format_id") or "best",
+                "height": info.get("height") or 0,
+                "width": info.get("width") or 0,
+                "ext": info.get("ext") or "mp4",
+                "filesize": info.get("filesize"),
+                "filesize_approx": info.get("filesize_approx"),
+                "vcodec": info.get("vcodec") or "unknown",
+                "acodec": info.get("acodec") or "unknown",
+                "url": info["url"],
+                "_easybay_direct": True,
+            }]
+
         seen = set()
         result = []
         for f in raw_formats:
@@ -216,7 +237,7 @@ def list_formats(request: FormatRequest):
 
             if not vcodec and not acodec:
                 continue
-            if vcodec and vcodec != "none" and not height:
+            if vcodec and vcodec != "none" and not height and not f.get("_easybay_direct"):
                 continue
 
             f_id = f["format_id"]
