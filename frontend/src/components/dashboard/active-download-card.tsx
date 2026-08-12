@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { CheckCircle, Loader2, Pause, XCircle, Youtube, Camera, Music, MessageCircle, Globe, Download as DownloadIcon, RefreshCw, Play, Trash2 } from "lucide-react";
+import { CheckCircle, Loader2, Pause, XCircle, Youtube, Camera, Music, MessageCircle, Ghost, Globe, Download as DownloadIcon, RefreshCw, Play, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -41,6 +41,8 @@ function PlatformIcon({ videoType }: { videoType: string }) {
       return <Music className="size-5 text-ink" />;
     case "twitter":
       return <MessageCircle className="size-5 text-ink" />;
+    case "snapchat":
+      return <Ghost className="size-5 text-yellow-500" />;
     default:
       return <Globe className="size-5 text-mute" />;
   }

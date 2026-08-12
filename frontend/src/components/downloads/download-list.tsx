@@ -4,7 +4,7 @@ import {
   Inbox, Loader2, Download as DownloadIcon, Trash2, RefreshCw,
   Pause, Play, Youtube, Music, Camera,
   MessageCircle, Globe, CheckCircle2, XCircle,
-  Clock, ArrowUpDown, Copy, CirclePlay
+  Clock, ArrowUpDown, Copy, CirclePlay, Ghost
 } from "lucide-react";
 import { MediaPreview } from "./media-preview";
 import { Progress } from "@/components/ui/progress";
@@ -70,6 +70,8 @@ function DownloadThumbnail({ download, className }: { download: Download; classN
       return <Camera className={cls} />;
     case "twitter":
       return <MessageCircle className={cls} />;
+    case "snapchat":
+      return <Ghost className={cn(cls, "text-yellow-500")} />;
     default:
       return <Globe className={cn(cls, "text-mute")} />;
   }

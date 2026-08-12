@@ -71,6 +71,12 @@ function PlatformIcon({ platform }: { platform: string }) {
           <DownloadIcon className="size-3.5 text-sky-500" />
         </div>
       );
+    case "snapchat":
+      return (
+        <div className="size-8 rounded-sm bg-yellow-400/10 flex items-center justify-center shrink-0">
+          <DownloadIcon className="size-3.5 text-yellow-500" />
+        </div>
+      );
     default:
       return (
         <div className="size-8 rounded-sm bg-surface-card flex items-center justify-center shrink-0">
