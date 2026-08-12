@@ -29,6 +29,29 @@ class Downloader:
         self.progress_callback = progress_callback
         self._current_info: ProgressInfo | None = None
         self._cancel_event = cancel_event
+        self._current_transfer_key: str | None = None
+        self._transfer_phase_start = 0.0
+        self._transfer_phase_end = 0.94
+
+    @staticmethod
+    def _transfer_fraction(event: dict) -> float | None:
+        """Calculate progress for byte-based and fragmented social-media transfers.
+
+        Direct files normally provide a byte total, but HLS/DASH downloads from TikTok, X, and
+        Instagram may only expose fragment counters. Returning None lets the UI show an honest
+        indeterminate animation when yt-dlp has no measurable total instead of pretending 0%.
+        """
+        total = event.get("total_bytes") or event.get("total_bytes_estimate") or 0
+        downloaded = event.get("downloaded_bytes") or 0
+        if total > 0:
+            return min(1.0, max(0.0, downloaded / total))
+
+        fragment_count = event.get("fragment_count") or 0
+        fragment_index = event.get("fragment_index") or 0
+        if fragment_count > 0:
+            return min(1.0, max(0.0, fragment_index / fragment_count))
+
+        return None
 
     def _progress_hook(self, d: dict):
         if self._current_info is None:
@@ -38,13 +61,38 @@ class Downloader:
             raise yt_dlp.utils.DownloadError("Paused by user")
 
         if d['status'] == 'downloading':
-            total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
-            downloaded = d.get('downloaded_bytes', 0)
             speed = d.get('speed')
             eta = d.get('eta')
             info_dict = d.get("info_dict") or {}
 
-            self._current_info.progress = downloaded / total if total > 0 else 0
+            transfer_key = str(
+                d.get("filename")
+                or info_dict.get("format_id")
+                or info_dict.get("id")
+                or "download"
+            )
+            if self._current_transfer_key is None:
+                self._current_transfer_key = transfer_key
+            elif transfer_key != self._current_transfer_key:
+                # Some qualities download video and audio as separate files. Start the next
+                # transfer from the last visible value so progress never jumps backwards from
+                # nearly complete to zero while yt-dlp prepares the audio stream.
+                self._transfer_phase_start = self._current_info.progress
+                self._transfer_phase_end = min(
+                    0.98,
+                    self._transfer_phase_start + ((1.0 - self._transfer_phase_start) * 0.75),
+                )
+                self._current_transfer_key = transfer_key
+
+            fraction = self._transfer_fraction(d)
+            if fraction is not None:
+                phase_progress = self._transfer_phase_start + (
+                    (self._transfer_phase_end - self._transfer_phase_start) * fraction
+                )
+                self._current_info.progress = max(
+                    self._current_info.progress,
+                    min(0.98, phase_progress),
+                )
             self._current_info.speed = f"{speed / 1024 / 1024:.1f}MB/s" if speed else ""
             self._current_info.eta = self._format_eta(eta) if eta else ""
             self._current_info.status = DownloadStatus.DOWNLOADING
@@ -64,11 +112,28 @@ class Downloader:
         elif d['status'] == 'finished':
             # A finished transfer may still need an audio/video merge. Keeping the value just
             # below 100% prevents the UI from offering a file while FFmpeg is still writing it.
-            self._current_info.progress = 0.99
+            self._current_info.progress = max(
+                self._current_info.progress,
+                self._transfer_phase_end,
+            )
             self._current_info.status = DownloadStatus.DOWNLOADING
 
         if self.progress_callback:
             self.progress_callback(self._current_info)
+
+    def _postprocessor_hook(self, event: dict) -> None:
+        if self._current_info is None:
+            return
+
+        if event.get("status") in {"started", "processing"}:
+            # Merging and conversion have no useful byte total. Reserving the final few percent
+            # communicates that the network transfer is done while avoiding a false 100% state.
+            self._current_info.progress = max(self._current_info.progress, 0.99)
+            self._current_info.speed = ""
+            self._current_info.eta = "Finalizing"
+            self._current_info.status = DownloadStatus.DOWNLOADING
+            if self.progress_callback:
+                self.progress_callback(self._current_info)
 
     def _format_eta(self, seconds: int) -> str:
         if seconds < 60:
@@ -99,6 +164,7 @@ class Downloader:
             'merge_output_format': 'mp4',
             'outtmpl': str(output_dir / '%(id)s.%(ext)s'),
             'progress_hooks': [self._progress_hook],
+            'postprocessor_hooks': [self._postprocessor_hook],
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
@@ -199,6 +265,9 @@ class Downloader:
             status=DownloadStatus.PENDING,
             filename=url,
         )
+        self._current_transfer_key = None
+        self._transfer_phase_start = 0.0
+        self._transfer_phase_end = 0.94
         if self.progress_callback:
             self.progress_callback(self._current_info)
 

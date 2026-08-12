@@ -316,9 +316,13 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume, 
                         <td className="px-3 py-2.5 min-w-0">
                           {(active || paused) && (
                             <div className="flex items-center gap-2 min-w-0">
-                              <Progress value={d.progress * 100} className="h-1.5 flex-1 max-w-[100px]" />
+                              <Progress
+                                value={d.progress * 100}
+                                indeterminate={active && d.progress <= 0}
+                                className="h-1.5 flex-1 max-w-[100px]"
+                              />
                               <span className="text-[11px] text-mute tabular-nums shrink-0">
-                                {Math.round(d.progress * 100)}%
+                                {active && d.progress <= 0 ? "Starting…" : `${Math.round(d.progress * 100)}%`}
                               </span>
                             </div>
                           )}
@@ -460,9 +464,13 @@ export function DownloadList({ downloads, loading, onDelete, onPause, onResume, 
                   {(active || paused) && (
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <Progress value={d.progress * 100} className="h-1.5 flex-1" />
-                          <span className="text-[11px] text-mute tabular-nums shrink-0">
-                          {Math.round(d.progress * 100)}%
+                        <Progress
+                          value={d.progress * 100}
+                          indeterminate={active && d.progress <= 0}
+                          className="h-1.5 flex-1"
+                        />
+                        <span className="text-[11px] text-mute tabular-nums shrink-0">
+                          {active && d.progress <= 0 ? "Starting…" : `${Math.round(d.progress * 100)}%`}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 text-[10px] text-mute tabular-nums">

@@ -42,8 +42,41 @@ class TestProgressInfo:
 
         downloader._progress_hook({"status": "finished"})
 
-        assert downloader._current_info.progress == 0.99
+        assert downloader._current_info.progress == 0.94
         assert downloader._current_info.status == DownloadStatus.DOWNLOADING
+
+    def test_fragment_progress_is_used_when_byte_total_is_missing(self):
+        downloader = Downloader()
+        downloader._current_info = ProgressInfo(status=DownloadStatus.DOWNLOADING)
+
+        downloader._progress_hook({
+            "status": "downloading",
+            "fragment_index": 5,
+            "fragment_count": 10,
+            "filename": "social-video.mp4",
+        })
+
+        assert downloader._current_info.progress == pytest.approx(0.47)
+
+    def test_separate_video_and_audio_transfers_never_move_progress_backwards(self):
+        downloader = Downloader()
+        downloader._current_info = ProgressInfo(status=DownloadStatus.DOWNLOADING)
+
+        downloader._progress_hook({
+            "status": "downloading",
+            "downloaded_bytes": 90,
+            "total_bytes": 100,
+            "filename": "video.f137.mp4",
+        })
+        video_progress = downloader._current_info.progress
+        downloader._progress_hook({
+            "status": "downloading",
+            "downloaded_bytes": 10,
+            "total_bytes": 100,
+            "filename": "audio.f140.m4a",
+        })
+
+        assert downloader._current_info.progress >= video_progress
 
 
 def test_large_download_options_resume_and_fetch_fragments_concurrently(monkeypatch, tmp_path):

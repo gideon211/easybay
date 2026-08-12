@@ -23,8 +23,9 @@ export function useDownloads() {
   const [error, setError] = useState<string | null>(null);
   const notifiedIds = useRef(new Set<number>());
 
-  // Active WebSocket connections keyed by download ID
-  const activeConnections = new Map<number, () => void>();
+  // Keep connection ownership stable across renders. A plain Map created in the hook body can be
+  // replaced whenever React renders, leaving later effects unable to find and close older sockets.
+  const activeConnections = useRef(new Map<number, () => void>());
 
   requestNotificationPermission();
 
@@ -58,29 +59,10 @@ export function useDownloads() {
     return () => clearInterval(interval);
   }, [fetchDownloads]);
 
-  const addDownload = useCallback(
-    async (data: DownloadRequest) => {
-      try {
-        const download = await submitDownload(data);
-        setDownloads((prev) => [download, ...prev]);
-
-        // Connect to WebSocket for real-time progress
-        connectToProgress(download.id);
-
-        return download;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to submit download";
-        setError(message);
-        throw err;
-      }
-    },
-    []
-  );
-
   const connectToProgress = useCallback(
     (downloadId: number) => {
       // Don't connect if already connected
-      if (activeConnections.has(downloadId)) return;
+      if (activeConnections.current.has(downloadId)) return;
 
       const cleanup = createProgressSocket(
         downloadId,
@@ -114,19 +96,48 @@ export function useDownloads() {
 
           // Clean up connection when download completes or fails
           if (data.status === "completed" || data.status === "failed") {
-            const cleanupFn = activeConnections.get(downloadId);
+            const cleanupFn = activeConnections.current.get(downloadId);
             if (cleanupFn) {
               cleanupFn();
-              activeConnections.delete(downloadId);
+              activeConnections.current.delete(downloadId);
             }
           }
         }
       );
 
-      activeConnections.set(downloadId, cleanup);
+      activeConnections.current.set(downloadId, cleanup);
     },
     []
   );
+
+  const addDownload = useCallback(
+    async (data: DownloadRequest) => {
+      try {
+        const download = await submitDownload(data);
+        setDownloads((prev) => [download, ...prev]);
+
+        // Connect immediately instead of waiting for the active-download effect below. This
+        // minimizes the window in which a very short social-media transfer could finish first.
+        connectToProgress(download.id);
+
+        return download;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to submit download";
+        setError(message);
+        throw err;
+      }
+    },
+    [connectToProgress]
+  );
+
+  useEffect(() => {
+    // A page refresh or navigation can happen while a backend job is already running. Reattach
+    // sockets for those records so progress remains live instead of falling back to 5-second
+    // polling jumps. The connection map prevents duplicate sockets on subsequent renders.
+    downloads
+      .filter((download) => download.status === "pending" || download.status === "downloading")
+      .forEach((download) => connectToProgress(download.id));
+  }, [downloads, connectToProgress]);
 
   const removeDownload = useCallback(
     async (id: number) => {
@@ -193,9 +204,10 @@ export function useDownloads() {
 
   // Clean up all connections on unmount
   useEffect(() => {
+    const connections = activeConnections.current;
     return () => {
-      activeConnections.forEach((cleanup) => cleanup());
-      activeConnections.clear();
+      connections.forEach((cleanup) => cleanup());
+      connections.clear();
     };
   }, []);
 
@@ -204,7 +216,7 @@ export function useDownloads() {
       try {
         const download = await reDownload(id);
         setDownloads((prev) => [download, ...prev]);
-        connectToProgress(id);
+        connectToProgress(download.id);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to re-download");
       }
